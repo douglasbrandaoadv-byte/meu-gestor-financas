@@ -252,7 +252,7 @@ else:
                     fig_mes = px.bar(df_mes, x='Mês', y='Valor', text_auto='.2s')
                     st.plotly_chart(fig_mes, use_container_width=True)
 
-    # ==========================================
+   # ==========================================
     # MÓDULO 3: CONCILIAÇÃO BANCÁRIA
     # ==========================================
     elif menu == "🏦 Conciliação Bancária":
@@ -266,8 +266,14 @@ else:
                 ofx = OfxParser.parse(arquivo_ofx)
                 transacoes = []
                 
-                # Extraindo transações de débito do arquivo OFX
-                for account in ofx.account:
+                # --- ABORDAGEM À PROVA DE FALHAS ---
+                # Verifica se o banco mandou uma lista de contas ou uma conta única
+                if isinstance(ofx.account, list):
+                    contas = ofx.account
+                else:
+                    contas = [ofx.account] # Transforma em lista para o loop funcionar
+                
+                for account in contas:
                     for tx in account.statement.transactions:
                         if tx.amount < 0: # Apenas saídas/despesas
                             transacoes.append({
@@ -281,6 +287,7 @@ else:
                                 "Ano": tx.date.year,
                                 "Conciliado": False
                             })
+                # ----------------------------------
                 
                 df_extrato = pd.DataFrame(transacoes)
                 
@@ -305,21 +312,19 @@ else:
                     )
                     
                     if st.button("Importar Lançamentos Não Conciliados", type="primary"):
-                        # Pega apenas os que o usuário NÃO marcou como conciliados e preencheu o Fornecedor
                         lancamentos_novos = df_conciliacao[(df_conciliacao["Conciliado"] == False) & (df_conciliacao["Fornecedor"].notna())]
                         
                         if lancamentos_novos.empty:
                             st.warning("Nenhum lançamento válido para importar. Preencha Fornecedor e Classificação.")
                         else:
-                            # Prepara as colunas para o padrão do banco
                             lancamentos_novos = lancamentos_novos.drop(columns=["Descrição Banco", "Conciliado"])
                             lancamentos_novos["Forma de Pagamento"] = "Débito/Transferência"
                             lancamentos_novos["Observação"] = "Importado via OFX"
                             
-                            # Salva
                             df_final = pd.concat([df_banco, lancamentos_novos], ignore_index=True)
                             salvar_dados(df_final)
                             st.success(f"{len(lancamentos_novos)} despesas importadas do extrato para o sistema com sucesso!")
+                            st.rerun()
                             
             except Exception as e:
                 st.error(f"Erro ao processar o arquivo OFX. Verifique se o formato é válido. Detalhe: {e}")
