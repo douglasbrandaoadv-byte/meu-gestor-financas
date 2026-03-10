@@ -295,7 +295,7 @@ else:
                     fig_mes = px.bar(df_mes, x='Mês', y='Valor', text_auto='.2s')
                     st.plotly_chart(fig_mes, use_container_width=True)
 
-    # ==========================================
+   # ==========================================
     # MÓDULO 3: CONCILIAÇÃO BANCÁRIA
     # ==========================================
     elif menu == "🏦 Conciliação Bancária":
@@ -328,7 +328,19 @@ else:
                 # 4. Agora sim, passa para a biblioteca
                 ofx = OfxParser.parse(arquivo_corrigido)
                 
-                transacoes = []
+                # --- INÍCIO DA NOVA LÓGICA DE CRUZAMENTO DE DADOS ---
+                # Prepara uma cópia temporária do banco para dar "baixa" nas encontradas
+                if not df_banco.empty:
+                    df_banco_match = df_banco[['Data', 'Valor']].copy()
+                    df_banco_match['Valor'] = pd.to_numeric(df_banco_match['Valor'], errors='coerce').fillna(0.0)
+                    df_banco_match['Data'] = df_banco_match['Data'].astype(str)
+                    df_banco_match['Usado'] = False # Cria uma flag para não usar a mesma despesa duas vezes
+                else:
+                    df_banco_match = pd.DataFrame(columns=['Data', 'Valor', 'Usado'])
+
+                transacoes_pendentes = []
+                qtd_total_ofx = 0
+                qtd_ja_conciliadas = 0
                 
                 if isinstance(ofx.account, list):
                     contas = ofx.account
@@ -338,27 +350,51 @@ else:
                 for account in contas:
                     for tx in account.statement.transactions:
                         if tx.amount < 0:
-                            transacoes.append({
-                                "Data": tx.date.strftime("%Y-%m-%d"),
-                                "Descrição Banco": tx.payee,
-                                "Valor": abs(tx.amount),
-                                "Fornecedor": None,
-                                "Classificação": None,
-                                "Status": "Pago", 
-                                "Mês": meses[tx.date.month - 1],
-                                "Ano": tx.date.year,
-                                "Conciliado": False
-                            })
+                            qtd_total_ofx += 1
+                            tx_data = tx.date.strftime("%Y-%m-%d")
+                            tx_valor = abs(tx.amount)
+                            
+                            match_encontrado = False
+                            
+                            if not df_banco_match.empty:
+                                # Procura no banco se existe alguma despesa no mesmo dia e com o mesmo valor (que ainda não foi casada)
+                                matches = df_banco_match[
+                                    (df_banco_match['Data'] == tx_data) & 
+                                    (df_banco_match['Valor'].round(2) == round(tx_valor, 2)) & 
+                                    (df_banco_match['Usado'] == False)
+                                ]
+                                
+                                if not matches.empty:
+                                    # Pega o índice do primeiro resultado e marca como usado
+                                    idx = matches.index[0]
+                                    df_banco_match.at[idx, 'Usado'] = True
+                                    match_encontrado = True
+                                    qtd_ja_conciliadas += 1
+                                    
+                            # Se NÃO achou no banco, ela vai para a lista da tela
+                            if not match_encontrado:
+                                transacoes_pendentes.append({
+                                    "Data": tx_data,
+                                    "Descrição Banco": tx.payee,
+                                    "Valor": tx_valor,
+                                    "Fornecedor": None,
+                                    "Classificação": None,
+                                    "Status": "Pago", 
+                                    "Mês": meses[tx.date.month - 1],
+                                    "Ano": tx.date.year,
+                                    "Ignorar": False # Renomeado para fazer mais sentido na visualização nova
+                                })
+                # --- FIM DA LÓGICA DE CRUZAMENTO ---
                 
-                df_extrato = pd.DataFrame(transacoes)
+                st.write(f"📊 **Resumo do Extrato:** {qtd_total_ofx} saídas identificadas | ✅ {qtd_ja_conciliadas} já constam no banco | ⚠️ **{len(transacoes_pendentes)} aguardando lançamento**")
+                
+                df_extrato = pd.DataFrame(transacoes_pendentes)
                 
                 if df_extrato.empty:
-                    st.warning("Nenhuma despesa (saída) encontrada neste extrato.")
+                    st.success("🎉 Excelente! Todas as despesas deste extrato já estão devidamente lançadas e conciliadas no seu sistema.")
                 else:
-                    st.success(f"{len(df_extrato)} transações de saída identificadas no extrato.")
-                    
-                    st.markdown("### Planilha de Conciliação")
-                    st.write("Preencha o 'Fornecedor' e 'Classificação' das despesas que deseja importar para o sistema.")
+                    st.markdown("### Planilha de Lançamentos Pendentes")
+                    st.write("As despesas abaixo constam no extrato do banco, mas ainda não estão no seu sistema. Preencha os campos para importá-las.")
                     
                     st.markdown("---")
                     col_forn_concil, col_class_concil = st.columns(2)
@@ -373,7 +409,7 @@ else:
                                     st.warning("Este fornecedor já está cadastrado.")
                                 else:
                                     st.session_state["fornecedores"].append(novo_forn_concil)
-                                    st.session_state["input_novo_forn_concil"] = "" # Limpa o campo
+                                    st.session_state["input_novo_forn_concil"] = "" 
                                     st.success(f"Fornecedor '{novo_forn_concil}' cadastrado!")
                                     time.sleep(2)
                                     st.rerun()
@@ -388,7 +424,7 @@ else:
                                     st.warning("Esta classificação já está cadastrada.")
                                 else:
                                     st.session_state["classificacoes"].append(nova_class_concil)
-                                    st.session_state["input_nova_class_concil"] = "" # Limpa o campo
+                                    st.session_state["input_nova_class_concil"] = ""
                                     st.success(f"Classificação '{nova_class_concil}' cadastrada!")
                                     time.sleep(2)
                                     st.rerun()
@@ -397,7 +433,7 @@ else:
                     df_conciliacao = st.data_editor(
                         df_extrato,
                         column_config={
-                            "Conciliado": st.column_config.CheckboxColumn("Já existe / Ignorar", default=False),
+                            "Ignorar": st.column_config.CheckboxColumn("Não Importar", default=False, help="Marque se não quiser lançar esta despesa no sistema."),
                             "Fornecedor": st.column_config.SelectboxColumn(options=st.session_state["fornecedores"], required=True),
                             "Classificação": st.column_config.SelectboxColumn(options=st.session_state["classificacoes"], required=True),
                             "Valor": st.column_config.NumberColumn(format="R$ %.2f")
@@ -406,20 +442,21 @@ else:
                         disabled=["Data", "Descrição Banco", "Valor", "Mês", "Ano"]
                     )
                     
-                    if st.button("Importar Lançamentos Não Conciliados", type="primary"):
-                        lancamentos_novos = df_conciliacao[(df_conciliacao["Conciliado"] == False) & (df_conciliacao["Fornecedor"].notna())]
+                    if st.button("Importar Lançamentos Selecionados", type="primary"):
+                        # Pega apenas os que a pessoa NÃO marcou para ignorar e que têm fornecedor
+                        lancamentos_novos = df_conciliacao[(df_conciliacao["Ignorar"] == False) & (df_conciliacao["Fornecedor"].notna())]
                         
                         if lancamentos_novos.empty:
-                            st.warning("Nenhum lançamento válido para importar. Preencha Fornecedor e Classificação nas despesas não conciliadas.")
+                            st.warning("Nenhum lançamento válido para importar. Preencha Fornecedor e Classificação ou deixe de ignorá-los.")
                         else:
-                            lancamentos_novos = lancamentos_novos.drop(columns=["Descrição Banco", "Conciliado"])
+                            lancamentos_novos = lancamentos_novos.drop(columns=["Descrição Banco", "Ignorar"])
                             lancamentos_novos["Forma de Pagamento"] = "Débito/Transferência"
                             lancamentos_novos["Observação"] = "Importado via OFX"
                             
                             df_final = pd.concat([df_banco, lancamentos_novos], ignore_index=True)
                             salvar_dados(df_final)
                             st.success(f"{len(lancamentos_novos)} despesas importadas com sucesso!")
-                            time.sleep(2) # Pausa de 2 segundos
+                            time.sleep(2) 
                             st.rerun()
                             
             except Exception as e:
