@@ -252,7 +252,7 @@ else:
                     fig_mes = px.bar(df_mes, x='Mês', y='Valor', text_auto='.2s')
                     st.plotly_chart(fig_mes, use_container_width=True)
 
- # ==========================================
+# ==========================================
     # MÓDULO 3: CONCILIAÇÃO BANCÁRIA
     # ==========================================
     elif menu == "🏦 Conciliação Bancária":
@@ -274,14 +274,10 @@ else:
                 contador_id = 1
                 
                 for linha in linhas:
-                    # Tira espaços do começo e fim só para a verificação
                     linha_limpa = linha.strip().upper()
-                    
-                    # Se for exatamente a tag de abertura vazia ou a tag de abertura e fechamento vazias
                     if linha_limpa == "<FITID>" or linha_limpa == "<FITID></FITID>":
                         linha = f"<FITID>BB_FIX_{contador_id}"
                         contador_id += 1
-                        
                     conteudo_corrigido.append(linha)
                 
                 # 3. Reconstrói o arquivo na memória
@@ -291,7 +287,6 @@ else:
                 # 4. Agora sim, passa para a biblioteca
                 ofx = OfxParser.parse(arquivo_corrigido)
                 
-                # Continuação normal da extração
                 transacoes = []
                 
                 # Garante que funciona para múltiplas contas ou conta única
@@ -323,8 +318,40 @@ else:
                     st.success(f"{len(df_extrato)} transações de saída identificadas no extrato.")
                     
                     st.markdown("### Planilha de Conciliação")
-                    st.write("Preencha o 'Fornecedor' e 'Classificação' das despesas que deseja importar para o sistema. Marque 'Conciliado' para ignorá-las (caso já existam no sistema).")
+                    st.write("Preencha o 'Fornecedor' e 'Classificação' das despesas que deseja importar para o sistema.")
                     
+                    # --- INÍCIO DA ALTERAÇÃO: CADASTROS RÁPIDOS ---
+                    st.markdown("---")
+                    col_forn_concil, col_class_concil = st.columns(2)
+                    
+                    with col_forn_concil:
+                        with st.expander("➕ Cadastrar Novo Fornecedor"):
+                            novo_forn_concil = st.text_input("Nome do Fornecedor", key="input_novo_forn_concil")
+                            if st.button("Salvar Fornecedor", key="btn_salvar_forn_concil", use_container_width=True):
+                                if novo_forn_concil.strip() == "":
+                                    st.warning("Por favor, digite o nome do fornecedor.")
+                                elif novo_forn_concil in st.session_state["fornecedores"]:
+                                    st.warning("Este fornecedor já está cadastrado.")
+                                else:
+                                    st.session_state["fornecedores"].append(novo_forn_concil)
+                                    st.success(f"Fornecedor '{novo_forn_concil}' cadastrado!")
+                                    st.rerun()
+
+                    with col_class_concil:
+                        with st.expander("➕ Cadastrar Nova Classificação"):
+                            nova_class_concil = st.text_input("Nome da Classificação", key="input_nova_class_concil")
+                            if st.button("Salvar Classificação", key="btn_salvar_class_concil", use_container_width=True):
+                                if nova_class_concil.strip() == "":
+                                    st.warning("Por favor, digite o nome da classificação.")
+                                elif nova_class_concil in st.session_state["classificacoes"]:
+                                    st.warning("Esta classificação já está cadastrada.")
+                                else:
+                                    st.session_state["classificacoes"].append(nova_class_concil)
+                                    st.success(f"Classificação '{nova_class_concil}' cadastrada!")
+                                    st.rerun()
+                    st.markdown("---")
+                    # --- FIM DA ALTERAÇÃO ---
+
                     df_conciliacao = st.data_editor(
                         df_extrato,
                         column_config={
@@ -341,7 +368,7 @@ else:
                         lancamentos_novos = df_conciliacao[(df_conciliacao["Conciliado"] == False) & (df_conciliacao["Fornecedor"].notna())]
                         
                         if lancamentos_novos.empty:
-                            st.warning("Nenhum lançamento válido para importar. Preencha Fornecedor e Classificação.")
+                            st.warning("Nenhum lançamento válido para importar. Preencha Fornecedor e Classificação nas despesas não conciliadas.")
                         else:
                             lancamentos_novos = lancamentos_novos.drop(columns=["Descrição Banco", "Conciliado"])
                             lancamentos_novos["Forma de Pagamento"] = "Débito/Transferência"
