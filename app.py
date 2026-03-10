@@ -252,7 +252,7 @@ else:
                     fig_mes = px.bar(df_mes, x='Mês', y='Valor', text_auto='.2s')
                     st.plotly_chart(fig_mes, use_container_width=True)
 
-   # ==========================================
+  # ==========================================
     # MÓDULO 3: CONCILIAÇÃO BANCÁRIA
     # ==========================================
     elif menu == "🏦 Conciliação Bancária":
@@ -263,15 +263,39 @@ else:
         
         if arquivo_ofx is not None:
             try:
-                ofx = OfxParser.parse(arquivo_ofx)
+                import io # Necessário para manipular o texto do arquivo na memória
+                
+                # --- CORREÇÃO DO PADRÃO BANCO DO BRASIL ---
+                # 1. Lê o arquivo ignorando erros de codificação de caracteres
+                conteudo = arquivo_ofx.read().decode('latin-1', errors='ignore')
+                
+                # 2. Varre linha por linha procurando a tag FITID vazia
+                linhas = conteudo.splitlines()
+                conteudo_corrigido = []
+                contador_id = 1
+                
+                for linha in linhas:
+                    # Se a linha contém <FITID> mas não tem nenhum número na frente (tamanho <= 8 caracteres)
+                    if "<FITID>" in linha.upper() and len(linha.strip()) <= 8:
+                        linha = f"<FITID>BB_FIX_{contador_id}"
+                        contador_id += 1
+                    conteudo_corrigido.append(linha)
+                
+                # 3. Junta tudo e transforma de volta em um "arquivo" em memória
+                novo_texto = "\n".join(conteudo_corrigido)
+                arquivo_corrigido = io.BytesIO(novo_texto.encode('utf-8'))
+                
+                # 4. Passa o arquivo corrigido para a biblioteca ler
+                ofx = OfxParser.parse(arquivo_corrigido)
+                # ------------------------------------------
+                
                 transacoes = []
                 
-                # --- ABORDAGEM À PROVA DE FALHAS ---
                 # Verifica se o banco mandou uma lista de contas ou uma conta única
                 if isinstance(ofx.account, list):
                     contas = ofx.account
                 else:
-                    contas = [ofx.account] # Transforma em lista para o loop funcionar
+                    contas = [ofx.account]
                 
                 for account in contas:
                     for tx in account.statement.transactions:
@@ -282,12 +306,11 @@ else:
                                 "Valor": abs(tx.amount),
                                 "Fornecedor": None,
                                 "Classificação": None,
-                                "Status": "Pago", # Se tá no extrato, já foi pago
+                                "Status": "Pago", 
                                 "Mês": meses[tx.date.month - 1],
                                 "Ano": tx.date.year,
                                 "Conciliado": False
                             })
-                # ----------------------------------
                 
                 df_extrato = pd.DataFrame(transacoes)
                 
