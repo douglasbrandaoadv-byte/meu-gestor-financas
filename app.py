@@ -4,6 +4,8 @@ from streamlit_gsheets import GSheetsConnection
 from datetime import date
 import plotly.express as px
 from ofxparse import OfxParser
+import time  # <-- Biblioteca adicionada para a pausa de 2 segundos
+import io
 
 # Configuração da página
 st.set_page_config(page_title="Gestor de Finanças", layout="wide")
@@ -23,7 +25,6 @@ def carregar_dados():
                 df[col] = ""
         df = df.dropna(how="all")
         
-        # Converte a coluna Valor para numérico para facilitar cálculos e gráficos
         if "Valor" in df.columns:
             df["Valor"] = pd.to_numeric(df["Valor"], errors="coerce").fillna(0.0)
             
@@ -56,7 +57,6 @@ meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "A
 formas_pag = ["PIX", "Cartão de Crédito", "Cartão de Débito", "Boleto", "Débito Automático"]
 status_pag = ["A Pagar", "Pago"]
 
-# Função Auxiliar de Filtros
 def aplicar_filtros(df, prefixo_chave):
     st.markdown("### 🔍 Filtros")
     col1, col2, col3, col4 = st.columns(4)
@@ -132,15 +132,23 @@ else:
                 with st.expander("Cadastrar Novo Fornecedor"):
                     novo_forn = st.text_input("Nome", key="n_forn_1")
                     if st.button("Salvar Fornecedor", key="b_forn_1") and novo_forn:
-                        st.session_state["fornecedores"].append(novo_forn)
-                        st.rerun()
+                        if novo_forn not in st.session_state["fornecedores"]:
+                            st.session_state["fornecedores"].append(novo_forn)
+                            st.session_state["n_forn_1"] = "" # Limpa o campo
+                            st.success(f"Fornecedor '{novo_forn}' cadastrado!")
+                            time.sleep(2) # Pausa de 2 segundos
+                            st.rerun()
 
                 classificacao = st.selectbox("Classificação", st.session_state["classificacoes"])
                 with st.expander("Cadastrar Nova Classificação"):
                     nova_class = st.text_input("Nome", key="n_class_1")
                     if st.button("Salvar Classificação", key="b_class_1") and nova_class:
-                        st.session_state["classificacoes"].append(nova_class)
-                        st.rerun()
+                        if nova_class not in st.session_state["classificacoes"]:
+                            st.session_state["classificacoes"].append(nova_class)
+                            st.session_state["n_class_1"] = "" # Limpa o campo
+                            st.success(f"Classificação '{nova_class}' cadastrada!")
+                            time.sleep(2)
+                            st.rerun()
 
                 valor = st.number_input("Valor (R$)", min_value=0.0, step=0.01)
                 forma = st.selectbox("Forma de Pagamento", formas_pag)
@@ -155,11 +163,46 @@ else:
             if st.button("Salvar Despesa", type="primary"):
                 nova_linha = pd.DataFrame([{"Valor": valor, "Data": str(data_pag), "Mês": mes, "Ano": ano, "Fornecedor": fornecedor, "Classificação": classificacao, "Forma de Pagamento": forma, "Status": status, "Observação": obs}])
                 salvar_dados(pd.concat([df_banco, nova_linha], ignore_index=True))
-                st.success("Salvo com sucesso!")
+                st.success("Despesa salva com sucesso!")
+                time.sleep(2) # Pausa de 2 segundos
                 st.rerun()
 
         # --- ABA 2: Lote ---
         with aba2:
+            st.markdown("---")
+            col_forn_lote, col_class_lote = st.columns(2)
+            
+            with col_forn_lote:
+                with st.expander("➕ Cadastrar Novo Fornecedor"):
+                    novo_forn_lote = st.text_input("Nome do Fornecedor", key="input_novo_forn_aba2")
+                    if st.button("Salvar Fornecedor", key="btn_salvar_forn_aba2", use_container_width=True):
+                        if novo_forn_lote.strip() == "":
+                            st.warning("Por favor, digite o nome do fornecedor.")
+                        elif novo_forn_lote in st.session_state["fornecedores"]:
+                            st.warning("Este fornecedor já está cadastrado.")
+                        else:
+                            st.session_state["fornecedores"].append(novo_forn_lote)
+                            st.session_state["input_novo_forn_aba2"] = "" # Limpa o campo
+                            st.success(f"Fornecedor '{novo_forn_lote}' cadastrado!")
+                            time.sleep(2)
+                            st.rerun()
+
+            with col_class_lote:
+                with st.expander("➕ Cadastrar Nova Classificação"):
+                    nova_class_lote = st.text_input("Nome da Classificação", key="input_nova_class_aba2")
+                    if st.button("Salvar Classificação", key="btn_salvar_class_aba2", use_container_width=True):
+                        if nova_class_lote.strip() == "":
+                            st.warning("Por favor, digite o nome da classificação.")
+                        elif nova_class_lote in st.session_state["classificacoes"]:
+                            st.warning("Esta classificação já está cadastrada.")
+                        else:
+                            st.session_state["classificacoes"].append(nova_class_lote)
+                            st.session_state["input_nova_class_aba2"] = "" # Limpa o campo
+                            st.success(f"Classificação '{nova_class_lote}' cadastrada!")
+                            time.sleep(2)
+                            st.rerun()
+            st.markdown("---")
+
             df_lote = pd.DataFrame(columns=COLUNAS)
             editado_lote = st.data_editor(
                 df_lote, num_rows="dynamic", use_container_width=True,
@@ -177,8 +220,11 @@ else:
                 if not editado_lote.empty:
                     editado_lote["Data"] = editado_lote["Data"].astype(str)
                     salvar_dados(pd.concat([df_banco, editado_lote], ignore_index=True))
-                    st.success("Lote salvo!")
+                    st.success(f"{len(editado_lote)} despesa(s) salva(s) com sucesso!")
+                    time.sleep(2) # Pausa de 2 segundos
                     st.rerun()
+                else:
+                    st.warning("A planilha está vazia.")
 
         # --- ABA 3: Editar / Excluir ---
         with aba3:
@@ -201,7 +247,6 @@ else:
                 )
 
                 if st.button("Confirmar Alterações", type="primary"):
-                    # Atualiza as linhas modificadas e remove as deletadas
                     df_final = df_banco.copy()
                     df_final.update(df_editado)
                     linhas_excluidas = set(df_filtrado.index) - set(df_editado.index)
@@ -209,6 +254,7 @@ else:
                     
                     salvar_dados(df_final)
                     st.success("Base atualizada com sucesso!")
+                    time.sleep(2) # Pausa de 2 segundos
                     st.rerun()
 
     # ==========================================
@@ -226,7 +272,6 @@ else:
             if df_dash.empty:
                 st.info("Nenhum dado encontrado para os filtros selecionados.")
             else:
-                # KPIs Rápidos
                 total_despesas = df_dash["Valor"].sum()
                 total_pagas = df_dash[df_dash["Status"] == "Pago"]["Valor"].sum()
                 total_aberto = df_dash[df_dash["Status"] == "A Pagar"]["Valor"].sum()
@@ -238,9 +283,7 @@ else:
                 
                 st.markdown("---")
                 
-                # Gráficos
                 c1, c2 = st.columns(2)
-                
                 with c1:
                     st.subheader("Despesas por Classificação")
                     fig_class = px.pie(df_dash, values='Valor', names='Classificação', hole=0.4)
@@ -252,7 +295,7 @@ else:
                     fig_mes = px.bar(df_mes, x='Mês', y='Valor', text_auto='.2s')
                     st.plotly_chart(fig_mes, use_container_width=True)
 
-# ==========================================
+    # ==========================================
     # MÓDULO 3: CONCILIAÇÃO BANCÁRIA
     # ==========================================
     elif menu == "🏦 Conciliação Bancária":
@@ -263,8 +306,6 @@ else:
         
         if arquivo_ofx is not None:
             try:
-                import io 
-                
                 # 1. Lê o arquivo bruto
                 conteudo = arquivo_ofx.read().decode('latin-1', errors='ignore')
                 
@@ -289,7 +330,6 @@ else:
                 
                 transacoes = []
                 
-                # Garante que funciona para múltiplas contas ou conta única
                 if isinstance(ofx.account, list):
                     contas = ofx.account
                 else:
@@ -297,7 +337,7 @@ else:
                 
                 for account in contas:
                     for tx in account.statement.transactions:
-                        if tx.amount < 0: # Apenas saídas
+                        if tx.amount < 0:
                             transacoes.append({
                                 "Data": tx.date.strftime("%Y-%m-%d"),
                                 "Descrição Banco": tx.payee,
@@ -320,7 +360,6 @@ else:
                     st.markdown("### Planilha de Conciliação")
                     st.write("Preencha o 'Fornecedor' e 'Classificação' das despesas que deseja importar para o sistema.")
                     
-                    # --- INÍCIO DA ALTERAÇÃO: CADASTROS RÁPIDOS ---
                     st.markdown("---")
                     col_forn_concil, col_class_concil = st.columns(2)
                     
@@ -334,7 +373,9 @@ else:
                                     st.warning("Este fornecedor já está cadastrado.")
                                 else:
                                     st.session_state["fornecedores"].append(novo_forn_concil)
+                                    st.session_state["input_novo_forn_concil"] = "" # Limpa o campo
                                     st.success(f"Fornecedor '{novo_forn_concil}' cadastrado!")
+                                    time.sleep(2)
                                     st.rerun()
 
                     with col_class_concil:
@@ -347,10 +388,11 @@ else:
                                     st.warning("Esta classificação já está cadastrada.")
                                 else:
                                     st.session_state["classificacoes"].append(nova_class_concil)
+                                    st.session_state["input_nova_class_concil"] = "" # Limpa o campo
                                     st.success(f"Classificação '{nova_class_concil}' cadastrada!")
+                                    time.sleep(2)
                                     st.rerun()
                     st.markdown("---")
-                    # --- FIM DA ALTERAÇÃO ---
 
                     df_conciliacao = st.data_editor(
                         df_extrato,
@@ -376,7 +418,8 @@ else:
                             
                             df_final = pd.concat([df_banco, lancamentos_novos], ignore_index=True)
                             salvar_dados(df_final)
-                            st.success(f"{len(lancamentos_novos)} despesas importadas do extrato para o sistema com sucesso!")
+                            st.success(f"{len(lancamentos_novos)} despesas importadas com sucesso!")
+                            time.sleep(2) # Pausa de 2 segundos
                             st.rerun()
                             
             except Exception as e:
