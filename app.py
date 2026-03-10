@@ -84,8 +84,8 @@ else:
         with col1:
             fornecedor = st.selectbox("Fornecedor", st.session_state["fornecedores"])
             with st.expander("Cadastrar Novo Fornecedor"):
-                novo_forn = st.text_input("Nome do novo fornecedor")
-                if st.button("Cadastrar Fornecedor") and novo_forn:
+                novo_forn = st.text_input("Nome do novo fornecedor", key="input_novo_forn_aba1")
+                if st.button("Cadastrar Fornecedor", key="btn_novo_forn_aba1") and novo_forn:
                     if novo_forn not in st.session_state["fornecedores"]:
                         st.session_state["fornecedores"].append(novo_forn)
                         st.success(f"'{novo_forn}' disponível para seleção!")
@@ -93,8 +93,8 @@ else:
 
             classificacao = st.selectbox("Classificação da Despesa", st.session_state["classificacoes"])
             with st.expander("Cadastrar Nova Classificação"):
-                nova_class = st.text_input("Nome da nova classificação")
-                if st.button("Cadastrar Classificação") and nova_class:
+                nova_class = st.text_input("Nome da nova classificação", key="input_nova_class_aba1")
+                if st.button("Cadastrar Classificação", key="btn_nova_class_aba1") and nova_class:
                     if nova_class not in st.session_state["classificacoes"]:
                         st.session_state["classificacoes"].append(nova_class)
                         st.success(f"'{nova_class}' disponível para seleção!")
@@ -126,6 +126,43 @@ else:
     with aba2:
         st.write("Preencha a planilha abaixo e clique em salvar.")
         
+        # --- INÍCIO DA ALTERAÇÃO: Cadastros Rápidos na Aba 2 ---
+        st.markdown("---")
+        st.subheader("Cadastros Rápidos")
+        
+        col_forn_lote, col_class_lote = st.columns(2)
+        
+        with col_forn_lote:
+            with st.expander("➕ Cadastrar Novo Fornecedor"):
+                novo_forn_lote = st.text_input("Nome do Fornecedor", key="input_novo_forn_aba2")
+                
+                if st.button("Salvar Fornecedor", key="btn_salvar_forn_aba2", use_container_width=True):
+                    if novo_forn_lote.strip() == "":
+                        st.warning("Por favor, digite o nome do fornecedor.")
+                    elif novo_forn_lote in st.session_state["fornecedores"]:
+                        st.warning("Este fornecedor já está cadastrado.")
+                    else:
+                        st.session_state["fornecedores"].append(novo_forn_lote)
+                        st.success(f"Fornecedor '{novo_forn_lote}' cadastrado com sucesso!")
+                        st.rerun()
+
+        with col_class_lote:
+            with st.expander("➕ Cadastrar Nova Classificação"):
+                nova_class_lote = st.text_input("Nome da Classificação", key="input_nova_class_aba2")
+                
+                if st.button("Salvar Classificação", key="btn_salvar_class_aba2", use_container_width=True):
+                    if nova_class_lote.strip() == "":
+                        st.warning("Por favor, digite o nome da classificação.")
+                    elif nova_class_lote in st.session_state["classificacoes"]:
+                        st.warning("Esta classificação já está cadastrada.")
+                    else:
+                        st.session_state["classificacoes"].append(nova_class_lote)
+                        st.success(f"Classificação '{nova_class_lote}' cadastrada com sucesso!")
+                        st.rerun()
+        
+        st.markdown("---")
+        # --- FIM DA ALTERAÇÃO ---
+
         df_lote = pd.DataFrame(columns=COLUNAS)
         df_lote["Valor"] = pd.to_numeric(df_lote["Valor"])
         df_lote["Ano"] = pd.to_numeric(df_lote["Ano"])
@@ -141,17 +178,22 @@ else:
                 "Status": st.column_config.SelectboxColumn(options=status_pag),
                 "Data": st.column_config.DateColumn()
             },
-            use_container_width=True
+            use_container_width=True,
+            key="editor_despesas_lote" # Chave adicionada por segurança
         )
 
         if st.button("CADASTRAR DESPESAS EM LOTE", type="primary"):
+            # Filtra linhas vazias para evitar envio de sujeira para o sheets
+            editado_lote = editado_lote.dropna(subset=["Fornecedor", "Valor", "Data"], how="all")
+            
             if not editado_lote.empty:
                 editado_lote["Data"] = editado_lote["Data"].astype(str)
                 df_atualizado = pd.concat([df_banco, editado_lote], ignore_index=True)
                 salvar_dados(df_atualizado)
                 st.success(f"{len(editado_lote)} despesas cadastradas no Google Sheets!")
+                st.rerun()
             else:
-                st.warning("A planilha está vazia.")
+                st.warning("A planilha está vazia ou incompleta.")
 
     # --- ABA 3: Editar ou Excluir ---
     with aba3:
@@ -175,5 +217,6 @@ else:
             if st.button("Confirmar Alterações", type="primary"):
                 salvar_dados(df_atualizado)
                 st.success("Planilha do Google atualizada com sucesso!")
+                st.rerun()
         else:
             st.info("Nenhuma despesa cadastrada ainda. A planilha está vazia.")
