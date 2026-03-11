@@ -248,15 +248,34 @@ else:
 
                 if st.button("Confirmar Alterações", type="primary"):
                     df_final = df_banco.copy()
+                    
+                    # 1. Atualiza as linhas que foram modificadas
                     df_final.update(df_editado)
+                    
+                    # 2. Identifica se alguma linha foi apagada e remove da base original
                     linhas_excluidas = set(df_filtrado.index) - set(df_editado.index)
                     df_final = df_final.drop(index=linhas_excluidas)
                     
-                    salvar_dados(df_final)
-                    st.success("Base atualizada com sucesso!")
-                    time.sleep(2) # Pausa de 2 segundos
+                    # 3. Garante que se você adicionar uma linha nova pelo editor, ela seja salva
+                    linhas_novas = set(df_editado.index) - set(df_filtrado.index)
+                    if linhas_novas:
+                        df_novas = df_editado.loc[list(linhas_novas)]
+                        df_final = pd.concat([df_final, df_novas], ignore_index=True)
+                    
+                    # --- CORREÇÃO DAS LINHAS FANTASMAS NO GOOGLE SHEETS ---
+                    diferenca = len(df_banco) - len(df_final)
+                    
+                    if diferenca > 0:
+                        # Cria linhas vazias com a mesma estrutura de colunas para "apagar" os dados que sobrariam no final do Sheets
+                        linhas_vazias = pd.DataFrame([{col: "" for col in COLUNAS}] * diferenca)
+                        df_para_salvar = pd.concat([df_final, linhas_vazias], ignore_index=True)
+                    else:
+                        df_para_salvar = df_final.copy()
+                        
+                    salvar_dados(df_para_salvar)
+                    st.success("Alterações e exclusões aplicadas com sucesso!")
+                    time.sleep(2) # Pausa de 2 segundos para ler a mensagem
                     st.rerun()
-
     # ==========================================
     # MÓDULO 2: RELATÓRIOS E DASHBOARDS
     # ==========================================
@@ -478,3 +497,4 @@ else:
                             
             except Exception as e:
                 st.error(f"Erro ao processar o arquivo OFX. Verifique se o formato é válido. Detalhe: {e}")
+
