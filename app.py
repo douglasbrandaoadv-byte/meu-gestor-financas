@@ -295,17 +295,23 @@ else:
                     fig_mes = px.bar(df_mes, x='Mês', y='Valor', text_auto='.2s')
                     st.plotly_chart(fig_mes, use_container_width=True)
 
-   # ==========================================
+  # ==========================================
     # MÓDULO 3: CONCILIAÇÃO BANCÁRIA
     # ==========================================
     elif menu == "🏦 Conciliação Bancária":
         st.title("Conciliação Bancária (Importação OFX)")
         st.write("Importe seu extrato bancário para confrontar os débitos com as despesas do sistema.")
         
+        # Inicializa a memória rápida de conciliação para evitar duplicidade na tela
+        if "conciliados_sessao" not in st.session_state:
+            st.session_state["conciliados_sessao"] = []
+            
         arquivo_ofx = st.file_uploader("Selecione o arquivo .OFX", type=["ofx"])
         
         if arquivo_ofx is not None:
             try:
+                import io 
+                
                 # 1. Lê o arquivo bruto
                 conteudo = arquivo_ofx.read().decode('latin-1', errors='ignore')
                 
@@ -325,16 +331,15 @@ else:
                 novo_texto = "\n".join(conteudo_corrigido)
                 arquivo_corrigido = io.BytesIO(novo_texto.encode('utf-8'))
                 
-                # 4. Agora sim, passa para a biblioteca
+                # 4. Passa para a biblioteca
                 ofx = OfxParser.parse(arquivo_corrigido)
                 
-                # --- INÍCIO DA NOVA LÓGICA DE CRUZAMENTO DE DADOS ---
-                # Prepara uma cópia temporária do banco para dar "baixa" nas encontradas
+                # Prepara o cruzamento de dados com o banco atual
                 if not df_banco.empty:
                     df_banco_match = df_banco[['Data', 'Valor']].copy()
                     df_banco_match['Valor'] = pd.to_numeric(df_banco_match['Valor'], errors='coerce').fillna(0.0)
                     df_banco_match['Data'] = df_banco_match['Data'].astype(str)
-                    df_banco_match['Usado'] = False # Cria uma flag para não usar a mesma despesa duas vezes
+                    df_banco_match['Usado'] = False 
                 else:
                     df_banco_match = pd.DataFrame(columns=['Data', 'Valor', 'Usado'])
 
@@ -353,11 +358,17 @@ else:
                             qtd_total_ofx += 1
                             tx_data = tx.date.strftime("%Y-%m-%d")
                             tx_valor = abs(tx.amount)
+                            tx_id = tx.id # Pega o ID único da transação
                             
                             match_encontrado = False
                             
-                            if not df_banco_match.empty:
-                                # Procura no banco se existe alguma despesa no mesmo dia e com o mesmo valor (que ainda não foi casada)
+                            # VERIFICAÇÃO 1: Está na memória rápida desta sessão? (Acabou de ser salvo)
+                            if tx_id in st.session_state["conciliados_sessao"]:
+                                match_encontrado = True
+                                qtd_ja_conciliadas += 1
+                            
+                            # VERIFICAÇÃO 2: Já consta no Google Sheets?
+                            elif not df_banco_match.empty:
                                 matches = df_banco_match[
                                     (df_banco_match['Data'] == tx_data) & 
                                     (df_banco_match['Valor'].round(2) == round(tx_valor, 2)) & 
@@ -365,15 +376,15 @@ else:
                                 ]
                                 
                                 if not matches.empty:
-                                    # Pega o índice do primeiro resultado e marca como usado
                                     idx = matches.index[0]
                                     df_banco_match.at[idx, 'Usado'] = True
                                     match_encontrado = True
                                     qtd_ja_conciliadas += 1
                                     
-                            # Se NÃO achou no banco, ela vai para a lista da tela
+                            # Se não foi encontrada, vai para a lista de pendentes na tela
                             if not match_encontrado:
                                 transacoes_pendentes.append({
+                                    "ID_Interno": tx_id, # Coluna de controle (ficará oculta)
                                     "Data": tx_data,
                                     "Descrição Banco": tx.payee,
                                     "Valor": tx_valor,
@@ -382,11 +393,10 @@ else:
                                     "Status": "Pago", 
                                     "Mês": meses[tx.date.month - 1],
                                     "Ano": tx.date.year,
-                                    "Ignorar": False # Renomeado para fazer mais sentido na visualização nova
+                                    "Ignorar": False 
                                 })
-                # --- FIM DA LÓGICA DE CRUZAMENTO ---
                 
-                st.write(f"📊 **Resumo do Extrato:** {qtd_total_ofx} saídas identificadas | ✅ {qtd_ja_conciliadas} já constam no banco | ⚠️ **{len(transacoes_pendentes)} aguardando lançamento**")
+                st.write(f"📊 **Resumo do Extrato:** {qtd_total_ofx} saídas identificadas | ✅ {qtd_ja_conciliadas} já constam no sistema | ⚠️ **{len(transacoes_pendentes)} aguardando lançamento**")
                 
                 df_extrato = pd.DataFrame(transacoes_pendentes)
                 
@@ -433,6 +443,7 @@ else:
                     df_conciliacao = st.data_editor(
                         df_extrato,
                         column_config={
+                            "ID_Interno": None, # Esconde a coluna ID_Interno da interface, o usuário não precisa ver
                             "Ignorar": st.column_config.CheckboxColumn("Não Importar", default=False, help="Marque se não quiser lançar esta despesa no sistema."),
                             "Fornecedor": st.column_config.SelectboxColumn(options=st.session_state["fornecedores"], required=True),
                             "Classificação": st.column_config.SelectboxColumn(options=st.session_state["classificacoes"], required=True),
@@ -443,19 +454,25 @@ else:
                     )
                     
                     if st.button("Importar Lançamentos Selecionados", type="primary"):
-                        # Pega apenas os que a pessoa NÃO marcou para ignorar e que têm fornecedor
                         lancamentos_novos = df_conciliacao[(df_conciliacao["Ignorar"] == False) & (df_conciliacao["Fornecedor"].notna())]
                         
                         if lancamentos_novos.empty:
-                            st.warning("Nenhum lançamento válido para importar. Preencha Fornecedor e Classificação ou deixe de ignorá-los.")
+                            st.warning("Nenhum lançamento válido para importar. Preencha Fornecedor e Classificação nas despesas não conciliadas.")
                         else:
-                            lancamentos_novos = lancamentos_novos.drop(columns=["Descrição Banco", "Ignorar"])
+                            # 1. Registra os IDs importados na memória da sessão
+                            ids_importados = lancamentos_novos["ID_Interno"].tolist()
+                            st.session_state["conciliados_sessao"].extend(ids_importados)
+                            
+                            # 2. Limpa as colunas de controle antes de enviar ao banco
+                            lancamentos_novos = lancamentos_novos.drop(columns=["Descrição Banco", "Ignorar", "ID_Interno"])
                             lancamentos_novos["Forma de Pagamento"] = "Débito/Transferência"
                             lancamentos_novos["Observação"] = "Importado via OFX"
                             
+                            # 3. Salva no Google Sheets
                             df_final = pd.concat([df_banco, lancamentos_novos], ignore_index=True)
                             salvar_dados(df_final)
-                            st.success(f"{len(lancamentos_novos)} despesas importadas com sucesso!")
+                            
+                            st.success(f"{len(lancamentos_novos)} despesas importadas com sucesso! Elas foram retiradas da lista.")
                             time.sleep(2) 
                             st.rerun()
                             
