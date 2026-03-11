@@ -391,7 +391,7 @@ else:
                             
                             match_encontrado = False
                             
-                            # VERIFICAÇÃO 1: Está na memória rápida desta sessão? (Acabou de ser salvo)
+                            # VERIFICAÇÃO 1: Está na memória rápida desta sessão?
                             if tx_id in st.session_state["conciliados_sessao"]:
                                 match_encontrado = True
                                 qtd_ja_conciliadas += 1
@@ -413,16 +413,17 @@ else:
                             # Se não foi encontrada, vai para a lista de pendentes na tela
                             if not match_encontrado:
                                 transacoes_pendentes.append({
-                                    "ID_Interno": tx_id, # Coluna de controle (ficará oculta)
+                                    "ID_Interno": tx_id, 
                                     "Data": tx_data,
                                     "Descrição Banco": tx.payee,
                                     "Valor": tx_valor,
                                     "Fornecedor": None,
                                     "Classificação": None,
+                                    "Forma de Pagamento": "Cartão de Débito", # Sugestão padrão que você pode alterar
                                     "Status": "Pago", 
+                                    "Observação": "Importado via OFX", # Texto padrão que você pode apagar ou editar
                                     "Mês": meses[tx.date.month - 1],
-                                    "Ano": tx.date.year,
-                                    "Ignorar": False 
+                                    "Ano": tx.date.year
                                 })
                 
                 st.write(f"📊 **Resumo do Extrato:** {qtd_total_ofx} saídas identificadas | ✅ {qtd_ja_conciliadas} já constam no sistema | ⚠️ **{len(transacoes_pendentes)} aguardando lançamento**")
@@ -433,7 +434,7 @@ else:
                     st.success("🎉 Excelente! Todas as despesas deste extrato já estão devidamente lançadas e conciliadas no seu sistema.")
                 else:
                     st.markdown("### Planilha de Lançamentos Pendentes")
-                    st.write("As despesas abaixo constam no extrato do banco, mas ainda não estão no seu sistema. Preencha os campos para importá-las.")
+                    st.write("Preencha o **Fornecedor** e a **Classificação** das despesas que deseja importar. Edite a forma de pagamento e adicione observações conforme necessário. **(Deixe o Fornecedor em branco nas linhas que NÃO quiser importar agora)**.")
                     
                     st.markdown("---")
                     col_forn_concil, col_class_concil = st.columns(2)
@@ -472,30 +473,30 @@ else:
                     df_conciliacao = st.data_editor(
                         df_extrato,
                         column_config={
-                            "ID_Interno": None, # Esconde a coluna ID_Interno da interface, o usuário não precisa ver
-                            "Ignorar": st.column_config.CheckboxColumn("Não Importar", default=False, help="Marque se não quiser lançar esta despesa no sistema."),
-                            "Fornecedor": st.column_config.SelectboxColumn(options=st.session_state["fornecedores"], required=True),
-                            "Classificação": st.column_config.SelectboxColumn(options=st.session_state["classificacoes"], required=True),
+                            "ID_Interno": None, # Continua oculto
+                            "Fornecedor": st.column_config.SelectboxColumn("Fornecedor", options=st.session_state["fornecedores"]),
+                            "Classificação": st.column_config.SelectboxColumn("Classificação", options=st.session_state["classificacoes"]),
+                            "Forma de Pagamento": st.column_config.SelectboxColumn("Forma de Pagamento", options=formas_pag, required=True),
+                            "Observação": st.column_config.TextColumn("Observação"),
                             "Valor": st.column_config.NumberColumn(format="R$ %.2f")
                         },
                         use_container_width=True,
                         disabled=["Data", "Descrição Banco", "Valor", "Mês", "Ano"]
                     )
                     
-                    if st.button("Importar Lançamentos Selecionados", type="primary"):
-                        lancamentos_novos = df_conciliacao[(df_conciliacao["Ignorar"] == False) & (df_conciliacao["Fornecedor"].notna())]
+                    if st.button("Importar Lançamentos Preenchidos", type="primary"):
+                        # Nova lógica: Só importa as linhas onde o usuário selecionou um Fornecedor E uma Classificação
+                        lancamentos_novos = df_conciliacao[df_conciliacao["Fornecedor"].notna() & df_conciliacao["Classificação"].notna()]
                         
                         if lancamentos_novos.empty:
-                            st.warning("Nenhum lançamento válido para importar. Preencha Fornecedor e Classificação nas despesas não conciliadas.")
+                            st.warning("Nenhum lançamento válido para importar. Preencha o Fornecedor e a Classificação na tabela acima.")
                         else:
                             # 1. Registra os IDs importados na memória da sessão
                             ids_importados = lancamentos_novos["ID_Interno"].tolist()
                             st.session_state["conciliados_sessao"].extend(ids_importados)
                             
-                            # 2. Limpa as colunas de controle antes de enviar ao banco
-                            lancamentos_novos = lancamentos_novos.drop(columns=["Descrição Banco", "Ignorar", "ID_Interno"])
-                            lancamentos_novos["Forma de Pagamento"] = "Débito/Transferência"
-                            lancamentos_novos["Observação"] = "Importado via OFX"
+                            # 2. Limpa as colunas auxiliares antes de enviar ao banco
+                            lancamentos_novos = lancamentos_novos.drop(columns=["Descrição Banco", "ID_Interno"])
                             
                             # 3. Salva no Google Sheets
                             df_final = pd.concat([df_banco, lancamentos_novos], ignore_index=True)
@@ -507,5 +508,3 @@ else:
                             
             except Exception as e:
                 st.error(f"Erro ao processar o arquivo OFX. Verifique se o formato é válido. Detalhe: {e}")
-
-
