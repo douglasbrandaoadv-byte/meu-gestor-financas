@@ -323,6 +323,24 @@ else:
                     df_mes = df_dash.groupby('Mês', as_index=False)['Valor'].sum()
                     fig_mes = px.bar(df_mes, x='Mês', y='Valor', text_auto='.2s')
                     st.plotly_chart(fig_mes, use_container_width=True)
+                    
+                # --- INÍCIO DA ALTERAÇÃO: Tabela de Detalhamento ---
+                st.markdown("---")
+                st.subheader("📄 Detalhamento das Despesas")
+                st.write(f"Mostrando {len(df_dash)} despesa(s) com base nos filtros aplicados.")
+                
+                st.dataframe(
+                    df_dash,
+                    column_config={
+                        "Valor": st.column_config.NumberColumn("Valor", format="R$ %.2f"),
+                        # Oculta colunas de controle interno caso existam
+                        "ID_Interno": None, 
+                        "Usado": None 
+                    },
+                    use_container_width=True,
+                    hide_index=True # Remove aquela primeira coluna de números (0, 1, 2...) para ficar mais limpo
+                )
+                # --- FIM DA ALTERAÇÃO ---
 
   # ==========================================
     # MÓDULO 3: CONCILIAÇÃO BANCÁRIA
