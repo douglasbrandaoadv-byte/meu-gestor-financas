@@ -465,4 +465,8 @@ else:
                                     "Ano": tx.date.year
                                 })
                 
-                st.write(f"📊 **Resumo do Extrato:** {qtd_total_ofx} saídas identificadas | ✅ {qtd_ja_conciliadas} já constam no sistema |
+              st.write(
+                    f"📊 **Resumo do Extrato:** {qtd_total_ofx} saídas identificadas | "
+                    f"✅ {qtd_ja_conciliadas} já constam no sistema | "
+                    f"⚠️ **{len(transacoes_pendentes)} aguardando lançamento**"
+                )
