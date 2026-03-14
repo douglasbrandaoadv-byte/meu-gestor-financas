@@ -284,57 +284,85 @@ else:
         if df_banco.empty:
             st.warning("Não há dados para gerar relatórios.")
         else:
-            # Filtra os dados conforme a tela
-            df_dash = aplicar_filtros(df_banco, "dash")
-            
-            # --- REGRA DE NEGÓCIO: IGNORAR "A SER RESSARCIDO" COMO DESPESA ---
-            # Remove qualquer linha que tenha a classificação "A SER RESSARCIDO"
-            if not df_dash.empty:
-                df_dash = df_dash[df_dash["Classificação"].astype(str).str.upper().str.strip() != "A SER RESSARCIDO"]
+            # 1. Puxa os dados completos com base nos filtros da tela
+            df_base = aplicar_filtros(df_banco, "dash")
             
             st.markdown("---")
             
-            if df_dash.empty:
-                st.info("Nenhum dado encontrado para os filtros selecionados (excluindo ressarcimentos).")
+            if df_base.empty:
+                st.info("Nenhum dado encontrado para os filtros selecionados.")
             else:
-                total_despesas = df_dash["Valor"].sum()
-                total_pagas = df_dash[df_dash["Status"] == "Pago"]["Valor"].sum()
-                total_aberto = df_dash[df_dash["Status"] == "A Pagar"]["Valor"].sum()
+                # 2. Separa os Lançamentos: Despesas Reais vs Empréstimos
+                condicao_emprestimo = df_base["Classificação"].astype(str).str.upper().str.strip() == "A SER RESSARCIDO"
                 
+                df_despesas = df_base[~condicao_emprestimo]
+                df_emprestimos = df_base[condicao_emprestimo]
+                
+                # 3. Cálculos de Despesas
+                total_despesas = df_despesas["Valor"].sum()
+                total_pagas = df_despesas[df_despesas["Status"] == "Pago"]["Valor"].sum()
+                total_aberto = df_despesas[df_despesas["Status"] == "A Pagar"]["Valor"].sum()
+                
+                # 4. Cálculos de Empréstimos ("A SER RESSARCIDO")
+                total_emprestimos_pendentes = df_emprestimos[df_emprestimos["Status"] == "A Pagar"]["Valor"].sum()
+                
+                # 5. Soma Total (Despesas Reais + Empréstimos a Pagar)
+                soma_despesas_emprestimos = total_despesas + total_emprestimos_pendentes
+                
+                # --- EXIBIÇÃO DOS INDICADORES NA TELA ---
+                st.subheader("💰 Resumo Financeiro (Filtrado)")
+                
+                # Primeira Linha de Indicadores (Métricas de Despesa)
                 col1, col2, col3 = st.columns(3)
-                col1.metric("Total de Despesas", f"R$ {total_despesas:,.2f}")
-                col2.metric("Total Pago", f"R$ {total_pagas:,.2f}")
-                col3.metric("Total em Aberto", f"R$ {total_aberto:,.2f}")
+                col1.metric("Total de Despesas", f"R$ {total_despesas:,.2f}", help="Soma de todas as despesas reais (exclui empréstimos).")
+                col2.metric("Despesas Pagas", f"R$ {total_pagas:,.2f}")
+                col3.metric("Despesas em Aberto", f"R$ {total_aberto:,.2f}")
                 
-                st.markdown("---")
-                
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.subheader("Despesas por Classificação")
-                    fig_class = px.pie(df_dash, values='Valor', names='Classificação', hole=0.4)
-                    st.plotly_chart(fig_class, use_container_width=True)
-                    
-                with c2:
-                    st.subheader("Despesas por Mês")
-                    df_mes = df_dash.groupby('Mês', as_index=False)['Valor'].sum()
-                    fig_mes = px.bar(df_mes, x='Mês', y='Valor', text_auto='.2s')
-                    st.plotly_chart(fig_mes, use_container_width=True)
-                    
-                st.markdown("---")
-                st.subheader("📄 Detalhamento das Despesas")
-                st.write(f"Mostrando {len(df_dash)} despesa(s) (Lançamentos 'A ser ressarcido' foram ocultados).")
-                
-                st.dataframe(
-                    df_dash,
-                    column_config={
-                        "Valor": st.column_config.NumberColumn("Valor", format="R$ %.2f"),
-                        "ID_Interno": None, 
-                        "Usado": None 
-                    },
-                    use_container_width=True,
-                    hide_index=True 
+                # Segunda Linha de Indicadores (Métricas Adicionais)
+                c_emp, c_geral = st.columns(2)
+                c_emp.metric(
+                    "Empréstimos Pendentes (A Receber)", 
+                    f"R$ {total_emprestimos_pendentes:,.2f}", 
+                    help="Soma dos lançamentos 'A SER RESSARCIDO' que estão com status 'A PAGAR'."
                 )
-
+                c_geral.metric(
+                    "Soma das Despesas + Empréstimos", 
+                    f"R$ {soma_despesas_emprestimos:,.2f}", 
+                    help="Total de Despesas somado aos Empréstimos Pendentes (Impacto total de Saídas)."
+                )
+                
+                st.markdown("---")
+                
+                # --- GRÁFICOS E TABELA ---
+                if df_despesas.empty:
+                    st.info("Não há despesas reais para exibir gráficos neste período (apenas empréstimos).")
+                else:
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.subheader("Despesas por Classificação")
+                        fig_class = px.pie(df_despesas, values='Valor', names='Classificação', hole=0.4)
+                        st.plotly_chart(fig_class, use_container_width=True)
+                        
+                    with c2:
+                        st.subheader("Despesas por Mês")
+                        df_mes = df_despesas.groupby('Mês', as_index=False)['Valor'].sum()
+                        fig_mes = px.bar(df_mes, x='Mês', y='Valor', text_auto='.2s')
+                        st.plotly_chart(fig_mes, use_container_width=True)
+                        
+                    st.markdown("---")
+                    st.subheader("📄 Detalhamento das Despesas")
+                    st.write(f"Mostrando {len(df_despesas)} despesa(s) (Lançamentos 'A ser ressarcido' foram ocultados desta tabela para não bagunçar a prestação de contas).")
+                    
+                    st.dataframe(
+                        df_despesas,
+                        column_config={
+                            "Valor": st.column_config.NumberColumn("Valor", format="R$ %.2f"),
+                            "ID_Interno": None, 
+                            "Usado": None 
+                        },
+                        use_container_width=True,
+                        hide_index=True 
+                    )
     # ==========================================
     # MÓDULO 3: VALORES A RECEBER (EMPRÉSTIMOS)
     # ==========================================
