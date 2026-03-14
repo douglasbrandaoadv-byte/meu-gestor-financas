@@ -381,11 +381,16 @@ else:
                 # 4. Passa para a biblioteca
                 ofx = OfxParser.parse(arquivo_corrigido)
                 
-                # Prepara o cruzamento de dados com o banco atual
+                # --- LÓGICA DE CRUZAMENTO (SUPER MATCH) ---
                 if not df_banco.empty:
                     df_banco_match = df_banco[['Data', 'Valor']].copy()
-                    df_banco_match['Valor'] = pd.to_numeric(df_banco_match['Valor'], errors='coerce').fillna(0.0)
-                    df_banco_match['Data'] = df_banco_match['Data'].astype(str)
+                    
+                    # PADRONIZAÇÃO FORÇADA DE DATAS E VALORES
+                    # Força a data do GSheets a virar o mesmo padrão do OFX (YYYY-MM-DD)
+                    df_banco_match['Data'] = pd.to_datetime(df_banco_match['Data'], errors='coerce', dayfirst=True).dt.strftime('%Y-%m-%d')
+                    # Garante que o valor numérico não tem sujeiras
+                    df_banco_match['Valor'] = pd.to_numeric(df_banco_match['Valor'], errors='coerce').fillna(0.0).round(2)
+                    
                     df_banco_match['Usado'] = False 
                 else:
                     df_banco_match = pd.DataFrame(columns=['Data', 'Valor', 'Usado'])
@@ -404,31 +409,31 @@ else:
                         if tx.amount < 0:
                             qtd_total_ofx += 1
                             tx_data = tx.date.strftime("%Y-%m-%d")
-                            tx_valor = abs(tx.amount)
-                            tx_id = tx.id # Pega o ID único da transação
+                            tx_valor = round(abs(tx.amount), 2)
+                            tx_id = tx.id 
                             
                             match_encontrado = False
                             
-                            # VERIFICAÇÃO 1: Está na memória rápida desta sessão?
+                            # VERIFICAÇÃO 1: Acabou de ser salvo nesta sessão?
                             if tx_id in st.session_state["conciliados_sessao"]:
                                 match_encontrado = True
                                 qtd_ja_conciliadas += 1
                             
-                            # VERIFICAÇÃO 2: Já consta no Google Sheets?
+                            # VERIFICAÇÃO 2: Acha no Google Sheets?
                             elif not df_banco_match.empty:
                                 matches = df_banco_match[
                                     (df_banco_match['Data'] == tx_data) & 
-                                    (df_banco_match['Valor'].round(2) == round(tx_valor, 2)) & 
+                                    (df_banco_match['Valor'] == tx_valor) & 
                                     (df_banco_match['Usado'] == False)
                                 ]
                                 
                                 if not matches.empty:
-                                    idx = matches.index[0]
-                                    df_banco_match.at[idx, 'Usado'] = True
+                                    idx = matches.index[0] # Pega a primeira que bater
+                                    df_banco_match.at[idx, 'Usado'] = True # Marca como "casada"
                                     match_encontrado = True
                                     qtd_ja_conciliadas += 1
                                     
-                            # Se não foi encontrada, vai para a lista de pendentes na tela
+                            # SÓ VAI PARA A PLANILHA DA TELA SE REALMENTE NÃO EXISTIR NO SISTEMA
                             if not match_encontrado:
                                 transacoes_pendentes.append({
                                     "ID_Interno": tx_id, 
@@ -437,9 +442,9 @@ else:
                                     "Valor": tx_valor,
                                     "Fornecedor": None,
                                     "Classificação": None,
-                                    "Forma de Pagamento": "Cartão de Débito", # Sugestão padrão que você pode alterar
+                                    "Forma de Pagamento": "Cartão de Débito",
                                     "Status": "Pago", 
-                                    "Observação": "Importado via OFX", # Texto padrão que você pode apagar ou editar
+                                    "Observação": "Importado via OFX", 
                                     "Mês": meses[tx.date.month - 1],
                                     "Ano": tx.date.year
                                 })
@@ -452,7 +457,7 @@ else:
                     st.success("🎉 Excelente! Todas as despesas deste extrato já estão devidamente lançadas e conciliadas no seu sistema.")
                 else:
                     st.markdown("### Planilha de Lançamentos Pendentes")
-                    st.write("Preencha o **Fornecedor** e a **Classificação** das despesas que deseja importar. Edite a forma de pagamento e adicione observações conforme necessário. **(Deixe o Fornecedor em branco nas linhas que NÃO quiser importar agora)**.")
+                    st.write("Abaixo estão **APENAS as despesas não lançadas**. Preencha o **Fornecedor** e a **Classificação** das que deseja importar agora. (O que ficar em branco continuará pendente para a próxima vez).")
                     
                     st.markdown("---")
                     col_forn_concil, col_class_concil = st.columns(2)
@@ -491,7 +496,7 @@ else:
                     df_conciliacao = st.data_editor(
                         df_extrato,
                         column_config={
-                            "ID_Interno": None, # Continua oculto
+                            "ID_Interno": None,
                             "Fornecedor": st.column_config.SelectboxColumn("Fornecedor", options=st.session_state["fornecedores"]),
                             "Classificação": st.column_config.SelectboxColumn("Classificação", options=st.session_state["classificacoes"]),
                             "Forma de Pagamento": st.column_config.SelectboxColumn("Forma de Pagamento", options=formas_pag, required=True),
@@ -503,20 +508,16 @@ else:
                     )
                     
                     if st.button("Importar Lançamentos Preenchidos", type="primary"):
-                        # Nova lógica: Só importa as linhas onde o usuário selecionou um Fornecedor E uma Classificação
                         lancamentos_novos = df_conciliacao[df_conciliacao["Fornecedor"].notna() & df_conciliacao["Classificação"].notna()]
                         
                         if lancamentos_novos.empty:
                             st.warning("Nenhum lançamento válido para importar. Preencha o Fornecedor e a Classificação na tabela acima.")
                         else:
-                            # 1. Registra os IDs importados na memória da sessão
                             ids_importados = lancamentos_novos["ID_Interno"].tolist()
                             st.session_state["conciliados_sessao"].extend(ids_importados)
                             
-                            # 2. Limpa as colunas auxiliares antes de enviar ao banco
                             lancamentos_novos = lancamentos_novos.drop(columns=["Descrição Banco", "ID_Interno"])
                             
-                            # 3. Salva no Google Sheets
                             df_final = pd.concat([df_banco, lancamentos_novos], ignore_index=True)
                             salvar_dados(df_final)
                             
