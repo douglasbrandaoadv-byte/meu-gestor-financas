@@ -4,7 +4,7 @@ from streamlit_gsheets import GSheetsConnection
 from datetime import date
 import plotly.express as px
 from ofxparse import OfxParser
-import time  # <-- Biblioteca adicionada para a pausa de 2 segundos
+import time 
 import io
 
 # Configuração da página
@@ -42,8 +42,12 @@ df_banco = carregar_dados()
 
 if "fornecedores" not in st.session_state:
     st.session_state["fornecedores"] = ["Supermercado A", "Posto B"]
+
+# Garante que "Pedir Ressarcimento" sempre exista como opção
 if "classificacoes" not in st.session_state:
-    st.session_state["classificacoes"] = ["Alimentação", "Transporte", "Taxas Bancárias"]
+    st.session_state["classificacoes"] = ["Alimentação", "Transporte", "Taxas Bancárias", "Pedir Ressarcimento"]
+elif "Pedir Ressarcimento" not in st.session_state["classificacoes"]:
+    st.session_state["classificacoes"].append("Pedir Ressarcimento")
 
 if not df_banco.empty:
     for f in df_banco["Fornecedor"].dropna().unique():
@@ -55,7 +59,8 @@ if not df_banco.empty:
 
 meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
 formas_pag = ["PIX", "Cartão de Crédito", "Cartão de Débito", "Boleto", "Débito Automático"]
-status_pag = ["A Pagar", "Pago"]
+# Adicionados novos status para facilitar o controle de ressarcimentos
+status_pag = ["A Pagar", "Pago", "A Receber", "Recebido"]
 
 def aplicar_filtros(df, prefixo_chave):
     st.markdown("### 🔍 Filtros")
@@ -111,7 +116,12 @@ if not st.session_state["logado"]:
             st.error("Usuário ou senha incorretos.")
 else:
     # --- MENU LATERAL ---
-    menu = st.sidebar.radio("Navegação", ["📝 Lançamentos e Edição", "📊 Relatórios e Dashboards", "🏦 Conciliação Bancária"])
+    menu = st.sidebar.radio("Navegação", [
+        "📝 Lançamentos e Edição", 
+        "📊 Relatórios e Dashboards", 
+        "🏦 Conciliação Bancária",
+        "🤝 Controle de Ressarcimentos" # Novo Módulo Adicionado
+    ])
     st.sidebar.markdown("---")
     if st.sidebar.button("Sair"):
         st.session_state["logado"] = False
@@ -134,9 +144,9 @@ else:
                     if st.button("Salvar Fornecedor", key="b_forn_1") and novo_forn:
                         if novo_forn not in st.session_state["fornecedores"]:
                             st.session_state["fornecedores"].append(novo_forn)
-                            st.session_state["n_forn_1"] = "" # Limpa o campo
+                            st.session_state["n_forn_1"] = "" 
                             st.success(f"Fornecedor '{novo_forn}' cadastrado!")
-                            time.sleep(2) # Pausa de 2 segundos
+                            time.sleep(2) 
                             st.rerun()
 
                 classificacao = st.selectbox("Classificação", st.session_state["classificacoes"])
@@ -145,7 +155,7 @@ else:
                     if st.button("Salvar Classificação", key="b_class_1") and nova_class:
                         if nova_class not in st.session_state["classificacoes"]:
                             st.session_state["classificacoes"].append(nova_class)
-                            st.session_state["n_class_1"] = "" # Limpa o campo
+                            st.session_state["n_class_1"] = "" 
                             st.success(f"Classificação '{nova_class}' cadastrada!")
                             time.sleep(2)
                             st.rerun()
@@ -164,7 +174,7 @@ else:
                 nova_linha = pd.DataFrame([{"Valor": valor, "Data": str(data_pag), "Mês": mes, "Ano": ano, "Fornecedor": fornecedor, "Classificação": classificacao, "Forma de Pagamento": forma, "Status": status, "Observação": obs}])
                 salvar_dados(pd.concat([df_banco, nova_linha], ignore_index=True))
                 st.success("Despesa salva com sucesso!")
-                time.sleep(2) # Pausa de 2 segundos
+                time.sleep(2) 
                 st.rerun()
 
         # --- ABA 2: Lote ---
@@ -182,7 +192,7 @@ else:
                             st.warning("Este fornecedor já está cadastrado.")
                         else:
                             st.session_state["fornecedores"].append(novo_forn_lote)
-                            st.session_state["input_novo_forn_aba2"] = "" # Limpa o campo
+                            st.session_state["input_novo_forn_aba2"] = "" 
                             st.success(f"Fornecedor '{novo_forn_lote}' cadastrado!")
                             time.sleep(2)
                             st.rerun()
@@ -197,7 +207,7 @@ else:
                             st.warning("Esta classificação já está cadastrada.")
                         else:
                             st.session_state["classificacoes"].append(nova_class_lote)
-                            st.session_state["input_nova_class_aba2"] = "" # Limpa o campo
+                            st.session_state["input_nova_class_aba2"] = "" 
                             st.success(f"Classificação '{nova_class_lote}' cadastrada!")
                             time.sleep(2)
                             st.rerun()
@@ -221,7 +231,7 @@ else:
                     editado_lote["Data"] = editado_lote["Data"].astype(str)
                     salvar_dados(pd.concat([df_banco, editado_lote], ignore_index=True))
                     st.success(f"{len(editado_lote)} despesa(s) salva(s) com sucesso!")
-                    time.sleep(2) # Pausa de 2 segundos
+                    time.sleep(2) 
                     st.rerun()
                 else:
                     st.warning("A planilha está vazia.")
@@ -231,7 +241,10 @@ else:
             if df_banco.empty:
                 st.info("Nenhuma despesa cadastrada.")
             else:
-                df_filtrado = aplicar_filtros(df_banco, "edicao")
+                # Oculta os ressarcimentos da aba de despesas normais
+                df_despesas_reais = df_banco[df_banco["Classificação"] != "Pedir Ressarcimento"]
+                
+                df_filtrado = aplicar_filtros(df_despesas_reais, "edicao")
                 st.markdown("---")
                 st.write("Edite as células abaixo. Para excluir, selecione a linha na lateral esquerda e aperte a tecla 'Delete'.")
                 
@@ -247,45 +260,33 @@ else:
                 )
 
                 if st.button("Confirmar Alterações", type="primary"):
-                    # 1. Cria uma cópia da base original
                     df_final = df_banco.copy()
                     
-                    # 2. Identifica as linhas que o usuário DELETOU no editor
                     linhas_excluidas = set(df_filtrado.index) - set(df_editado.index)
-                    
-                    # 3. Remove fisicamente as linhas excluídas da base
                     if linhas_excluidas:
                         df_final = df_final.drop(index=linhas_excluidas)
                     
-                    # 4. Atualiza os dados das linhas que foram apenas modificadas (texto, valores)
                     df_final.update(df_editado)
                     
-                    # 5. Adiciona novas linhas caso tenha inserido algo novo direto na tabela
                     linhas_novas = set(df_editado.index) - set(df_filtrado.index)
                     if linhas_novas:
                         df_novas = df_editado.loc[list(linhas_novas)]
                         df_final = pd.concat([df_final, df_novas], ignore_index=True)
                     
-                    # --- A CORREÇÃO PARA DELETAR NO GOOGLE SHEETS ---
-                    # Reorganiza a numeração das linhas (índice) para não haver furos no Pandas
                     df_final = df_final.reset_index(drop=True)
-                    
-                    # Calcula quantas linhas a tabela inteira perdeu após a exclusão
                     diferenca_tamanho = len(df_banco) - len(df_final)
                     
                     if diferenca_tamanho > 0:
-                        # Cria blocos totalmente em branco para sobrescrever a "linha fantasma" no Sheets
                         df_vazio = pd.DataFrame([{col: "" for col in COLUNAS}] * diferenca_tamanho)
                         df_para_salvar = pd.concat([df_final, df_vazio], ignore_index=True)
                     else:
                         df_para_salvar = df_final.copy()
                         
-                    # 6. Salva a tabela limpa na nuvem
                     salvar_dados(df_para_salvar)
-                    
                     st.success("Exclusão aplicada com sucesso! A despesa sumiu da base de dados e dos relatórios.")
                     time.sleep(2)
                     st.rerun()
+
     # ==========================================
     # MÓDULO 2: RELATÓRIOS E DASHBOARDS
     # ==========================================
@@ -295,7 +296,10 @@ else:
         if df_banco.empty:
             st.warning("Não há dados para gerar relatórios.")
         else:
-            df_dash = aplicar_filtros(df_banco, "dash")
+            # Filtra para os relatórios mostrarem apenas despesas reais
+            df_despesas_reais = df_banco[df_banco["Classificação"] != "Pedir Ressarcimento"]
+            
+            df_dash = aplicar_filtros(df_despesas_reais, "dash")
             st.markdown("---")
             
             if df_dash.empty:
@@ -324,25 +328,22 @@ else:
                     fig_mes = px.bar(df_mes, x='Mês', y='Valor', text_auto='.2s')
                     st.plotly_chart(fig_mes, use_container_width=True)
                     
-                # --- INÍCIO DA ALTERAÇÃO: Tabela de Detalhamento ---
                 st.markdown("---")
                 st.subheader("📄 Detalhamento das Despesas")
-                st.write(f"Mostrando {len(df_dash)} despesa(s) com base nos filtros aplicados.")
+                st.write(f"Mostrando {len(df_dash)} despesa(s) com base nos filtros aplicados. (Valores a ressarcir foram ocultados)")
                 
                 st.dataframe(
                     df_dash,
                     column_config={
                         "Valor": st.column_config.NumberColumn("Valor", format="R$ %.2f"),
-                        # Oculta colunas de controle interno caso existam
                         "ID_Interno": None, 
                         "Usado": None 
                     },
                     use_container_width=True,
-                    hide_index=True # Remove aquela primeira coluna de números (0, 1, 2...) para ficar mais limpo
+                    hide_index=True 
                 )
-                # --- FIM DA ALTERAÇÃO ---
 
-  # ==========================================
+    # ==========================================
     # MÓDULO 3: CONCILIAÇÃO BANCÁRIA
     # ==========================================
     elif menu == "🏦 Conciliação Bancária":
@@ -358,10 +359,8 @@ else:
             try:
                 import io 
                 
-                # 1. Lê o arquivo bruto
                 conteudo = arquivo_ofx.read().decode('latin-1', errors='ignore')
                 
-                # 2. Blindagem contra o padrão do Banco do Brasil
                 linhas = conteudo.splitlines()
                 conteudo_corrigido = []
                 contador_id = 1
@@ -373,14 +372,11 @@ else:
                         contador_id += 1
                     conteudo_corrigido.append(linha)
                 
-                # 3. Reconstrói o arquivo na memória
                 novo_texto = "\n".join(conteudo_corrigido)
                 arquivo_corrigido = io.BytesIO(novo_texto.encode('utf-8'))
                 
-                # 4. Passa para a biblioteca
                 ofx = OfxParser.parse(arquivo_corrigido)
                 
-                # --- INÍCIO DA LIMPEZA ABSOLUTA ---
                 if not df_banco.empty:
                     df_banco_match = df_banco[['Data', 'Valor']].copy()
                     
@@ -392,154 +388,4 @@ else:
                             
                     df_banco_match['Data'] = df_banco_match['Data'].apply(limpar_data)
                     
-                    def limpar_valor(v):
-                        try:
-                            if isinstance(v, str):
-                                v = v.upper().replace('R$', '').strip()
-                                if '.' in v and ',' in v:
-                                    v = v.replace('.', '').replace(',', '.')
-                                elif ',' in v:
-                                    v = v.replace(',', '.')
-                            return round(float(v), 2)
-                        except:
-                            return 0.0
-                            
-                    df_banco_match['Valor'] = df_banco_match['Valor'].apply(limpar_valor)
-                    df_banco_match['Usado'] = False 
-                else:
-                    df_banco_match = pd.DataFrame(columns=['Data', 'Valor', 'Usado'])
-                # --- FIM DA LIMPEZA ---
-
-                transacoes_pendentes = []
-                qtd_total_ofx = 0
-                qtd_ja_conciliadas = 0
-                
-                if isinstance(ofx.account, list):
-                    contas = ofx.account
-                else:
-                    contas = [ofx.account]
-                
-                for account in contas:
-                    for tx in account.statement.transactions:
-                        if tx.amount < 0:
-                            qtd_total_ofx += 1
-                            tx_data = tx.date.strftime("%Y-%m-%d")
-                            tx_valor = round(abs(float(tx.amount)), 2)
-                            tx_id = tx.id 
-                            
-                            match_encontrado = False
-                            
-                            if tx_id in st.session_state["conciliados_sessao"]:
-                                match_encontrado = True
-                                qtd_ja_conciliadas += 1
-                            
-                            elif not df_banco_match.empty:
-                                matches = df_banco_match[
-                                    (df_banco_match['Data'] == tx_data) & 
-                                    (abs(df_banco_match['Valor'] - tx_valor) < 0.05) & 
-                                    (df_banco_match['Usado'] == False)
-                                ]
-                                
-                                if not matches.empty:
-                                    idx = matches.index[0] 
-                                    df_banco_match.at[idx, 'Usado'] = True 
-                                    match_encontrado = True
-                                    qtd_ja_conciliadas += 1
-                                    
-                            if not match_encontrado:
-                                transacoes_pendentes.append({
-                                    "ID_Interno": tx_id, 
-                                    "Data": tx_data,
-                                    "Descrição Banco": tx.payee,
-                                    "Valor": tx_valor,
-                                    "Fornecedor": None,
-                                    "Classificação": None,
-                                    "Forma de Pagamento": "Cartão de Débito",
-                                    "Status": "Pago", 
-                                    "Observação": "Importado via OFX", 
-                                    "Mês": meses[tx.date.month - 1],
-                                    "Ano": tx.date.year
-                                })
-                
-                st.write(
-                    f"📊 **Resumo do Extrato:** {qtd_total_ofx} saídas identificadas | "
-                    f"✅ {qtd_ja_conciliadas} já constam no sistema | "
-                    f"⚠️ **{len(transacoes_pendentes)} aguardando lançamento**"
-                )
-                
-                df_extrato = pd.DataFrame(transacoes_pendentes)
-                
-                if df_extrato.empty:
-                    st.success("🎉 Excelente! Todas as despesas deste extrato já estão devidamente lançadas e conciliadas no seu sistema.")
-                else:
-                    st.markdown("### Planilha de Lançamentos Pendentes")
-                    st.write("Abaixo estão **APENAS as despesas não lançadas**. Preencha o **Fornecedor** e a **Classificação** das que deseja importar agora. (O que ficar em branco continuará pendente).")
-                    
-                    st.markdown("---")
-                    col_forn_concil, col_class_concil = st.columns(2)
-                    
-                    with col_forn_concil:
-                        with st.expander("➕ Cadastrar Novo Fornecedor"):
-                            novo_forn_concil = st.text_input("Nome do Fornecedor", key="input_novo_forn_concil")
-                            if st.button("Salvar Fornecedor", key="btn_salvar_forn_concil", use_container_width=True):
-                                if novo_forn_concil.strip() == "":
-                                    st.warning("Por favor, digite o nome do fornecedor.")
-                                elif novo_forn_concil in st.session_state["fornecedores"]:
-                                    st.warning("Este fornecedor já está cadastrado.")
-                                else:
-                                    st.session_state["fornecedores"].append(novo_forn_concil)
-                                    st.session_state["input_novo_forn_concil"] = "" 
-                                    st.success(f"Fornecedor '{novo_forn_concil}' cadastrado!")
-                                    time.sleep(2)
-                                    st.rerun()
-
-                    with col_class_concil:
-                        with st.expander("➕ Cadastrar Nova Classificação"):
-                            nova_class_concil = st.text_input("Nome da Classificação", key="input_nova_class_concil")
-                            if st.button("Salvar Classificação", key="btn_salvar_class_concil", use_container_width=True):
-                                if nova_class_concil.strip() == "":
-                                    st.warning("Por favor, digite o nome da classificação.")
-                                elif nova_class_concil in st.session_state["classificacoes"]:
-                                    st.warning("Esta classificação já está cadastrada.")
-                                else:
-                                    st.session_state["classificacoes"].append(nova_class_concil)
-                                    st.session_state["input_nova_class_concil"] = ""
-                                    st.success(f"Classificação '{nova_class_concil}' cadastrada!")
-                                    time.sleep(2)
-                                    st.rerun()
-                    st.markdown("---")
-
-                    df_conciliacao = st.data_editor(
-                        df_extrato,
-                        column_config={
-                            "ID_Interno": None,
-                            "Fornecedor": st.column_config.SelectboxColumn("Fornecedor", options=st.session_state["fornecedores"]),
-                            "Classificação": st.column_config.SelectboxColumn("Classificação", options=st.session_state["classificacoes"]),
-                            "Forma de Pagamento": st.column_config.SelectboxColumn("Forma de Pagamento", options=formas_pag, required=True),
-                            "Observação": st.column_config.TextColumn("Observação"),
-                            "Valor": st.column_config.NumberColumn(format="R$ %.2f")
-                        },
-                        use_container_width=True,
-                        disabled=["Data", "Descrição Banco", "Valor", "Mês", "Ano"]
-                    )
-                    
-                    if st.button("Importar Lançamentos Preenchidos", type="primary"):
-                        lancamentos_novos = df_conciliacao[df_conciliacao["Fornecedor"].notna() & df_conciliacao["Classificação"].notna()]
-                        
-                        if lancamentos_novos.empty:
-                            st.warning("Nenhum lançamento válido para importar. Preencha o Fornecedor e a Classificação na tabela.")
-                        else:
-                            ids_importados = lancamentos_novos["ID_Interno"].tolist()
-                            st.session_state["conciliados_sessao"].extend(ids_importados)
-                            
-                            lancamentos_novos = lancamentos_novos.drop(columns=["Descrição Banco", "ID_Interno"])
-                            
-                            df_final = pd.concat([df_banco, lancamentos_novos], ignore_index=True)
-                            salvar_dados(df_final)
-                            
-                            st.success(f"{len(lancamentos_novos)} despesas importadas com sucesso! Elas foram retiradas da lista.")
-                            time.sleep(2) 
-                            st.rerun()
-                            
-            except Exception as e:
-                st.error(f"Erro ao processar o arquivo OFX. Verifique se o formato é válido. Detalhe: {e}")
+                    def limpar_valor(
