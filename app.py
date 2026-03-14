@@ -4,7 +4,7 @@ from streamlit_gsheets import GSheetsConnection
 from datetime import date
 import plotly.express as px
 from ofxparse import OfxParser
-import time  # <-- Biblioteca adicionada para a pausa de 2 segundos
+import time 
 import io
 
 # Configuração da página
@@ -43,7 +43,7 @@ df_banco = carregar_dados()
 if "fornecedores" not in st.session_state:
     st.session_state["fornecedores"] = ["Supermercado A", "Posto B"]
 if "classificacoes" not in st.session_state:
-    st.session_state["classificacoes"] = ["Alimentação", "Transporte", "Taxas Bancárias"]
+    st.session_state["classificacoes"] = ["Alimentação", "Transporte", "Taxas Bancárias", "A SER RESSARCIDO"]
 
 if not df_banco.empty:
     for f in df_banco["Fornecedor"].dropna().unique():
@@ -111,7 +111,12 @@ if not st.session_state["logado"]:
             st.error("Usuário ou senha incorretos.")
 else:
     # --- MENU LATERAL ---
-    menu = st.sidebar.radio("Navegação", ["📝 Lançamentos e Edição", "📊 Relatórios e Dashboards", "🏦 Conciliação Bancária"])
+    menu = st.sidebar.radio("Navegação", [
+        "📝 Lançamentos e Edição", 
+        "📊 Relatórios e Dashboards", 
+        "🤝 Valores a Receber (Empréstimos)", 
+        "🏦 Conciliação Bancária"
+    ])
     st.sidebar.markdown("---")
     if st.sidebar.button("Sair"):
         st.session_state["logado"] = False
@@ -124,7 +129,6 @@ else:
         st.title("Gestão de Despesas")
         aba1, aba2, aba3 = st.tabs(["Lançar Unitário", "Lote", "Editar / Excluir"])
 
-        # --- ABA 1: Unitário ---
         with aba1:
             col1, col2 = st.columns(2)
             with col1:
@@ -134,9 +138,9 @@ else:
                     if st.button("Salvar Fornecedor", key="b_forn_1") and novo_forn:
                         if novo_forn not in st.session_state["fornecedores"]:
                             st.session_state["fornecedores"].append(novo_forn)
-                            st.session_state["n_forn_1"] = "" # Limpa o campo
+                            st.session_state["n_forn_1"] = "" 
                             st.success(f"Fornecedor '{novo_forn}' cadastrado!")
-                            time.sleep(2) # Pausa de 2 segundos
+                            time.sleep(2) 
                             st.rerun()
 
                 classificacao = st.selectbox("Classificação", st.session_state["classificacoes"])
@@ -145,7 +149,7 @@ else:
                     if st.button("Salvar Classificação", key="b_class_1") and nova_class:
                         if nova_class not in st.session_state["classificacoes"]:
                             st.session_state["classificacoes"].append(nova_class)
-                            st.session_state["n_class_1"] = "" # Limpa o campo
+                            st.session_state["n_class_1"] = "" 
                             st.success(f"Classificação '{nova_class}' cadastrada!")
                             time.sleep(2)
                             st.rerun()
@@ -164,10 +168,9 @@ else:
                 nova_linha = pd.DataFrame([{"Valor": valor, "Data": str(data_pag), "Mês": mes, "Ano": ano, "Fornecedor": fornecedor, "Classificação": classificacao, "Forma de Pagamento": forma, "Status": status, "Observação": obs}])
                 salvar_dados(pd.concat([df_banco, nova_linha], ignore_index=True))
                 st.success("Despesa salva com sucesso!")
-                time.sleep(2) # Pausa de 2 segundos
+                time.sleep(2) 
                 st.rerun()
 
-        # --- ABA 2: Lote ---
         with aba2:
             st.markdown("---")
             col_forn_lote, col_class_lote = st.columns(2)
@@ -182,7 +185,7 @@ else:
                             st.warning("Este fornecedor já está cadastrado.")
                         else:
                             st.session_state["fornecedores"].append(novo_forn_lote)
-                            st.session_state["input_novo_forn_aba2"] = "" # Limpa o campo
+                            st.session_state["input_novo_forn_aba2"] = "" 
                             st.success(f"Fornecedor '{novo_forn_lote}' cadastrado!")
                             time.sleep(2)
                             st.rerun()
@@ -197,7 +200,7 @@ else:
                             st.warning("Esta classificação já está cadastrada.")
                         else:
                             st.session_state["classificacoes"].append(nova_class_lote)
-                            st.session_state["input_nova_class_aba2"] = "" # Limpa o campo
+                            st.session_state["input_nova_class_aba2"] = "" 
                             st.success(f"Classificação '{nova_class_lote}' cadastrada!")
                             time.sleep(2)
                             st.rerun()
@@ -221,12 +224,11 @@ else:
                     editado_lote["Data"] = editado_lote["Data"].astype(str)
                     salvar_dados(pd.concat([df_banco, editado_lote], ignore_index=True))
                     st.success(f"{len(editado_lote)} despesa(s) salva(s) com sucesso!")
-                    time.sleep(2) # Pausa de 2 segundos
+                    time.sleep(2) 
                     st.rerun()
                 else:
                     st.warning("A planilha está vazia.")
 
-        # --- ABA 3: Editar / Excluir ---
         with aba3:
             if df_banco.empty:
                 st.info("Nenhuma despesa cadastrada.")
@@ -247,45 +249,32 @@ else:
                 )
 
                 if st.button("Confirmar Alterações", type="primary"):
-                    # 1. Cria uma cópia da base original
                     df_final = df_banco.copy()
-                    
-                    # 2. Identifica as linhas que o usuário DELETOU no editor
                     linhas_excluidas = set(df_filtrado.index) - set(df_editado.index)
-                    
-                    # 3. Remove fisicamente as linhas excluídas da base
                     if linhas_excluidas:
                         df_final = df_final.drop(index=linhas_excluidas)
                     
-                    # 4. Atualiza os dados das linhas que foram apenas modificadas (texto, valores)
                     df_final.update(df_editado)
                     
-                    # 5. Adiciona novas linhas caso tenha inserido algo novo direto na tabela
                     linhas_novas = set(df_editado.index) - set(df_filtrado.index)
                     if linhas_novas:
                         df_novas = df_editado.loc[list(linhas_novas)]
                         df_final = pd.concat([df_final, df_novas], ignore_index=True)
                     
-                    # --- A CORREÇÃO PARA DELETAR NO GOOGLE SHEETS ---
-                    # Reorganiza a numeração das linhas (índice) para não haver furos no Pandas
                     df_final = df_final.reset_index(drop=True)
-                    
-                    # Calcula quantas linhas a tabela inteira perdeu após a exclusão
                     diferenca_tamanho = len(df_banco) - len(df_final)
                     
                     if diferenca_tamanho > 0:
-                        # Cria blocos totalmente em branco para sobrescrever a "linha fantasma" no Sheets
                         df_vazio = pd.DataFrame([{col: "" for col in COLUNAS}] * diferenca_tamanho)
                         df_para_salvar = pd.concat([df_final, df_vazio], ignore_index=True)
                     else:
                         df_para_salvar = df_final.copy()
                         
-                    # 6. Salva a tabela limpa na nuvem
                     salvar_dados(df_para_salvar)
-                    
-                    st.success("Exclusão aplicada com sucesso! A despesa sumiu da base de dados e dos relatórios.")
+                    st.success("Exclusão aplicada com sucesso!")
                     time.sleep(2)
                     st.rerun()
+
     # ==========================================
     # MÓDULO 2: RELATÓRIOS E DASHBOARDS
     # ==========================================
@@ -295,18 +284,25 @@ else:
         if df_banco.empty:
             st.warning("Não há dados para gerar relatórios.")
         else:
+            # Filtra os dados conforme a tela
             df_dash = aplicar_filtros(df_banco, "dash")
+            
+            # --- REGRA DE NEGÓCIO: IGNORAR "A SER RESSARCIDO" COMO DESPESA ---
+            # Remove qualquer linha que tenha a classificação "A SER RESSARCIDO"
+            if not df_dash.empty:
+                df_dash = df_dash[df_dash["Classificação"].astype(str).str.upper().str.strip() != "A SER RESSARCIDO"]
+            
             st.markdown("---")
             
             if df_dash.empty:
-                st.info("Nenhum dado encontrado para os filtros selecionados.")
+                st.info("Nenhum dado encontrado para os filtros selecionados (excluindo ressarcimentos).")
             else:
                 total_despesas = df_dash["Valor"].sum()
                 total_pagas = df_dash[df_dash["Status"] == "Pago"]["Valor"].sum()
                 total_aberto = df_dash[df_dash["Status"] == "A Pagar"]["Valor"].sum()
                 
                 col1, col2, col3 = st.columns(3)
-                col1.metric("Total Filtrado", f"R$ {total_despesas:,.2f}")
+                col1.metric("Total de Despesas", f"R$ {total_despesas:,.2f}")
                 col2.metric("Total Pago", f"R$ {total_pagas:,.2f}")
                 col3.metric("Total em Aberto", f"R$ {total_aberto:,.2f}")
                 
@@ -324,26 +320,79 @@ else:
                     fig_mes = px.bar(df_mes, x='Mês', y='Valor', text_auto='.2s')
                     st.plotly_chart(fig_mes, use_container_width=True)
                     
-                # --- INÍCIO DA ALTERAÇÃO: Tabela de Detalhamento ---
                 st.markdown("---")
                 st.subheader("📄 Detalhamento das Despesas")
-                st.write(f"Mostrando {len(df_dash)} despesa(s) com base nos filtros aplicados.")
+                st.write(f"Mostrando {len(df_dash)} despesa(s) (Lançamentos 'A ser ressarcido' foram ocultados).")
                 
                 st.dataframe(
                     df_dash,
                     column_config={
                         "Valor": st.column_config.NumberColumn("Valor", format="R$ %.2f"),
-                        # Oculta colunas de controle interno caso existam
                         "ID_Interno": None, 
                         "Usado": None 
                     },
                     use_container_width=True,
-                    hide_index=True # Remove aquela primeira coluna de números (0, 1, 2...) para ficar mais limpo
+                    hide_index=True 
                 )
-                # --- FIM DA ALTERAÇÃO ---
 
-  # ==========================================
-    # MÓDULO 3: CONCILIAÇÃO BANCÁRIA
+    # ==========================================
+    # MÓDULO 3: VALORES A RECEBER (EMPRÉSTIMOS)
+    # ==========================================
+    elif menu == "🤝 Valores a Receber (Empréstimos)":
+        st.title("Valores a Receber (A Ser Ressarcido)")
+        st.write("Acompanhe aqui os valores que foram emprestados ou adiantados e precisam ser cobrados.")
+
+        if df_banco.empty:
+            st.info("Nenhum dado cadastrado.")
+        else:
+            # Filtra APENAS o que for "A SER RESSARCIDO"
+            df_emprestimos = df_banco[df_banco["Classificação"].astype(str).str.upper().str.strip() == "A SER RESSARCIDO"].copy()
+
+            if df_emprestimos.empty:
+                st.success("🎉 Você não tem nenhum valor pendente para ser ressarcido no momento!")
+            else:
+                total_receber = df_emprestimos[df_emprestimos["Status"] == "A Pagar"]["Valor"].sum()
+                total_recebido = df_emprestimos[df_emprestimos["Status"] == "Pago"]["Valor"].sum()
+
+                col1, col2 = st.columns(2)
+                col1.metric("⏳ Total a Receber (Pendente)", f"R$ {total_receber:,.2f}")
+                col2.metric("✅ Total já Devolvido (Pago)", f"R$ {total_recebido:,.2f}")
+
+                st.markdown("---")
+                
+                # Resumo de quem deve
+                st.subheader("Resumo por Pessoa / Empresa")
+                df_devedores = df_emprestimos[df_emprestimos["Status"] == "A Pagar"].groupby("Fornecedor")["Valor"].sum().reset_index()
+                
+                if not df_devedores.empty:
+                    df_devedores = df_devedores.sort_values(by="Valor", ascending=False)
+                    st.dataframe(
+                        df_devedores,
+                        column_config={
+                            "Fornecedor": "Quem está devendo",
+                            "Valor": st.column_config.NumberColumn("Valor Total Pendente", format="R$ %.2f")
+                        },
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                else:
+                    st.info("Todos os empréstimos registrados já foram pagos!")
+
+                st.markdown("---")
+                st.subheader("Histórico Completo de Empréstimos")
+                st.dataframe(
+                    df_emprestimos,
+                    column_config={
+                        "Valor": st.column_config.NumberColumn("Valor", format="R$ %.2f"),
+                        "ID_Interno": None, 
+                        "Usado": None 
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+    # ==========================================
+    # MÓDULO 4: CONCILIAÇÃO BANCÁRIA
     # ==========================================
     elif menu == "🏦 Conciliação Bancária":
         st.title("Conciliação Bancária (Importação OFX)")
@@ -358,10 +407,8 @@ else:
             try:
                 import io 
                 
-                # 1. Lê o arquivo bruto
                 conteudo = arquivo_ofx.read().decode('latin-1', errors='ignore')
                 
-                # 2. Blindagem contra o padrão do Banco do Brasil
                 linhas = conteudo.splitlines()
                 conteudo_corrigido = []
                 contador_id = 1
@@ -373,14 +420,11 @@ else:
                         contador_id += 1
                     conteudo_corrigido.append(linha)
                 
-                # 3. Reconstrói o arquivo na memória
                 novo_texto = "\n".join(conteudo_corrigido)
                 arquivo_corrigido = io.BytesIO(novo_texto.encode('utf-8'))
                 
-                # 4. Passa para a biblioteca
                 ofx = OfxParser.parse(arquivo_corrigido)
                 
-                # --- INÍCIO DA LIMPEZA ABSOLUTA ---
                 if not df_banco.empty:
                     df_banco_match = df_banco[['Data', 'Valor']].copy()
                     
@@ -408,7 +452,6 @@ else:
                     df_banco_match['Usado'] = False 
                 else:
                     df_banco_match = pd.DataFrame(columns=['Data', 'Valor', 'Usado'])
-                # --- FIM DA LIMPEZA ---
 
                 transacoes_pendentes = []
                 qtd_total_ofx = 0
@@ -461,6 +504,7 @@ else:
                                     "Ano": tx.date.year
                                 })
                 
+                # --- AQUI ESTÁ A CORREÇÃO DA INDENTAÇÃO ---
                 st.write(
                     f"📊 **Resumo do Extrato:** {qtd_total_ofx} saídas identificadas | "
                     f"✅ {qtd_ja_conciliadas} já constam no sistema | "
@@ -473,7 +517,7 @@ else:
                     st.success("🎉 Excelente! Todas as despesas deste extrato já estão devidamente lançadas e conciliadas no seu sistema.")
                 else:
                     st.markdown("### Planilha de Lançamentos Pendentes")
-                    st.write("Abaixo estão **APENAS as despesas não lançadas**. Preencha o **Fornecedor** e a **Classificação** das que deseja importar agora. (O que ficar em branco continuará pendente).")
+                    st.write("Abaixo estão **APENAS as despesas não lançadas**. Preencha o **Fornecedor** e a **Classificação** das que deseja importar agora.")
                     
                     st.markdown("---")
                     col_forn_concil, col_class_concil = st.columns(2)
