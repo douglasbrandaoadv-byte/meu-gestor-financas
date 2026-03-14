@@ -384,16 +384,14 @@ else:
                 if not df_banco.empty:
                     df_banco_match = df_banco[['Data', 'Valor']].copy()
                     
-                    # Limpeza de Data: Pega qualquer formato de data e converte para YYYY-MM-DD estrito
                     def limpar_data(d):
                         try:
                             return pd.to_datetime(d).strftime('%Y-%m-%d')
                         except:
-                            return str(d).strip()[:10] # Fallback de segurança
+                            return str(d).strip()[:10]
                             
                     df_banco_match['Data'] = df_banco_match['Data'].apply(limpar_data)
                     
-                    # Limpeza de Valor: Remove letras, vírgulas e transforma em float puro
                     def limpar_valor(v):
                         try:
                             if isinstance(v, str):
@@ -431,16 +429,14 @@ else:
                             
                             match_encontrado = False
                             
-                            # VERIFICAÇÃO 1: Sessão atual
                             if tx_id in st.session_state["conciliados_sessao"]:
                                 match_encontrado = True
                                 qtd_ja_conciliadas += 1
                             
-                            # VERIFICAÇÃO 2: Google Sheets (com tolerância de arredondamento)
                             elif not df_banco_match.empty:
                                 matches = df_banco_match[
                                     (df_banco_match['Data'] == tx_data) & 
-                                    (abs(df_banco_match['Valor'] - tx_valor) < 0.05) & # Aceita diferença de até 5 centavos
+                                    (abs(df_banco_match['Valor'] - tx_valor) < 0.05) & 
                                     (df_banco_match['Usado'] == False)
                                 ]
                                 
@@ -465,8 +461,85 @@ else:
                                     "Ano": tx.date.year
                                 })
                 
-              st.write(
+                st.write(
                     f"📊 **Resumo do Extrato:** {qtd_total_ofx} saídas identificadas | "
                     f"✅ {qtd_ja_conciliadas} já constam no sistema | "
                     f"⚠️ **{len(transacoes_pendentes)} aguardando lançamento**"
                 )
+                
+                df_extrato = pd.DataFrame(transacoes_pendentes)
+                
+                if df_extrato.empty:
+                    st.success("🎉 Excelente! Todas as despesas deste extrato já estão devidamente lançadas e conciliadas no seu sistema.")
+                else:
+                    st.markdown("### Planilha de Lançamentos Pendentes")
+                    st.write("Abaixo estão **APENAS as despesas não lançadas**. Preencha o **Fornecedor** e a **Classificação** das que deseja importar agora. (O que ficar em branco continuará pendente).")
+                    
+                    st.markdown("---")
+                    col_forn_concil, col_class_concil = st.columns(2)
+                    
+                    with col_forn_concil:
+                        with st.expander("➕ Cadastrar Novo Fornecedor"):
+                            novo_forn_concil = st.text_input("Nome do Fornecedor", key="input_novo_forn_concil")
+                            if st.button("Salvar Fornecedor", key="btn_salvar_forn_concil", use_container_width=True):
+                                if novo_forn_concil.strip() == "":
+                                    st.warning("Por favor, digite o nome do fornecedor.")
+                                elif novo_forn_concil in st.session_state["fornecedores"]:
+                                    st.warning("Este fornecedor já está cadastrado.")
+                                else:
+                                    st.session_state["fornecedores"].append(novo_forn_concil)
+                                    st.session_state["input_novo_forn_concil"] = "" 
+                                    st.success(f"Fornecedor '{novo_forn_concil}' cadastrado!")
+                                    time.sleep(2)
+                                    st.rerun()
+
+                    with col_class_concil:
+                        with st.expander("➕ Cadastrar Nova Classificação"):
+                            nova_class_concil = st.text_input("Nome da Classificação", key="input_nova_class_concil")
+                            if st.button("Salvar Classificação", key="btn_salvar_class_concil", use_container_width=True):
+                                if nova_class_concil.strip() == "":
+                                    st.warning("Por favor, digite o nome da classificação.")
+                                elif nova_class_concil in st.session_state["classificacoes"]:
+                                    st.warning("Esta classificação já está cadastrada.")
+                                else:
+                                    st.session_state["classificacoes"].append(nova_class_concil)
+                                    st.session_state["input_nova_class_concil"] = ""
+                                    st.success(f"Classificação '{nova_class_concil}' cadastrada!")
+                                    time.sleep(2)
+                                    st.rerun()
+                    st.markdown("---")
+
+                    df_conciliacao = st.data_editor(
+                        df_extrato,
+                        column_config={
+                            "ID_Interno": None,
+                            "Fornecedor": st.column_config.SelectboxColumn("Fornecedor", options=st.session_state["fornecedores"]),
+                            "Classificação": st.column_config.SelectboxColumn("Classificação", options=st.session_state["classificacoes"]),
+                            "Forma de Pagamento": st.column_config.SelectboxColumn("Forma de Pagamento", options=formas_pag, required=True),
+                            "Observação": st.column_config.TextColumn("Observação"),
+                            "Valor": st.column_config.NumberColumn(format="R$ %.2f")
+                        },
+                        use_container_width=True,
+                        disabled=["Data", "Descrição Banco", "Valor", "Mês", "Ano"]
+                    )
+                    
+                    if st.button("Importar Lançamentos Preenchidos", type="primary"):
+                        lancamentos_novos = df_conciliacao[df_conciliacao["Fornecedor"].notna() & df_conciliacao["Classificação"].notna()]
+                        
+                        if lancamentos_novos.empty:
+                            st.warning("Nenhum lançamento válido para importar. Preencha o Fornecedor e a Classificação na tabela.")
+                        else:
+                            ids_importados = lancamentos_novos["ID_Interno"].tolist()
+                            st.session_state["conciliados_sessao"].extend(ids_importados)
+                            
+                            lancamentos_novos = lancamentos_novos.drop(columns=["Descrição Banco", "ID_Interno"])
+                            
+                            df_final = pd.concat([df_banco, lancamentos_novos], ignore_index=True)
+                            salvar_dados(df_final)
+                            
+                            st.success(f"{len(lancamentos_novos)} despesas importadas com sucesso! Elas foram retiradas da lista.")
+                            time.sleep(2) 
+                            st.rerun()
+                            
+            except Exception as e:
+                st.error(f"Erro ao processar o arquivo OFX. Verifique se o formato é válido. Detalhe: {e}")
